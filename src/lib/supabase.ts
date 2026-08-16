@@ -2,6 +2,10 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 
+import type { Database } from "@/lib/database.types";
+
+export const IMAGE_BUCKET = "board-images";
+
 /**
  * The board has no login yet, so nothing reaches Supabase from the browser —
  * every read and write goes through a server action holding the service role
@@ -17,7 +21,7 @@ export function supabaseAdmin() {
     );
   }
 
-  return createClient(url, key, {
+  return createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

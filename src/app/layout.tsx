@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Inter } from "next/font/google";
+
+import { TabBar } from "@/components/tab-bar";
+import { TimezoneSync } from "@/components/timezone-sync";
+import { getTimezone } from "@/lib/dates";
 import "./globals.css";
 
 const sans = Inter({
@@ -31,6 +35,9 @@ export const metadata: Metadata = {
   },
 };
 
+// Every screen reads the live board, so nothing here is prerenderable.
+export const dynamic = "force-dynamic";
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -44,10 +51,17 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const timeZone = await getTimezone();
+
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/* h-dvh, not h-screen: Safari's toolbars change the visible height. */}
+      <body className="flex h-dvh flex-col overflow-hidden">
+        {children}
+        <TabBar />
+        <TimezoneSync current={timeZone} />
+      </body>
     </html>
   );
 }

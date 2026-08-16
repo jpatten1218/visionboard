@@ -26,7 +26,32 @@
   }
 }
 
+/* The workbook calls for at least three sticky colours. These carry the same
+   idea as card accents: you can tell a tier at a glance without reading it. */
+:root {
+  --tier-universal: #8a8177;
+  --tier-macro: #c2410c;
+  --tier-micro: #0f766e;
+  --tier-mini: #6d28d9;
+  --tier-atomic: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tier-universal: #a89e93;
+    --tier-macro: #fb923c;
+    --tier-micro: #2dd4bf;
+    --tier-mini: #a78bfa;
+    --tier-atomic: #f87171;
+  }
+}
+
 @theme inline {
+  --color-tier-universal: var(--tier-universal);
+  --color-tier-macro: var(--tier-macro);
+  --color-tier-micro: var(--tier-micro);
+  --color-tier-mini: var(--tier-mini);
+  --color-tier-atomic: var(--tier-atomic);
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-sunk: var(--surface-sunk);
