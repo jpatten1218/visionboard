@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Vision Board">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1815" />
+      <stop offset="1" stop-color="#0c0b0a" />
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0a06a" />
+      <stop offset="1" stop-color="#b4552d" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)" />
+  <g fill="none" stroke="url(#mark)" stroke-width="20" stroke-linejoin="round">
+    <rect x="104" y="120" width="130" height="130" rx="18" />
+    <rect x="278" y="120" width="130" height="130" rx="18" />
+    <rect x="104" y="294" width="130" height="130" rx="18" />
+  </g>
+  <path
+    d="M343 294c6 34 29 57 63 63-34 6-57 29-63 63-6-34-29-57-63-63 34-6 57-29 63-63z"
+    fill="url(#mark)"
+  />
+</svg>
