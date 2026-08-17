@@ -1,26 +1,32 @@
+import Link from "next/link";
+
 import { AddGoalForm } from "@/components/add-goal-form";
+import { HabitForm } from "@/components/habit-form";
 import { CategorySelect, Field, FloorCeilingFields } from "@/components/goal-card";
 import { EmptyState, Screen } from "@/components/screen";
 import {
   addCategory,
   deleteCategory,
   deleteGoal,
+  deleteHabit,
   renameCategory,
   saveWeeklyReview,
   updateGoal,
 } from "@/lib/actions";
 import { categoryColor } from "@/lib/category-color";
 import { formatDay, getTimezone } from "@/lib/dates";
-import { getCategories, getToday, getUniversalGoals, getWeek } from "@/lib/queries";
+import { describeRepeat, SLOT_LABEL } from "@/lib/habits";
+import { getCategories, getHabits, getToday, getUniversalGoals, getWeek } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function CompassPage() {
   const timeZone = await getTimezone();
-  const [universal, week, categories, { atomic }] = await Promise.all([
+  const [universal, week, categories, { atomic }, habits] = await Promise.all([
     getUniversalGoals(),
     getWeek(timeZone),
     getCategories(),
     getToday(timeZone),
+    getHabits(timeZone),
   ]);
 
   return (
@@ -136,6 +142,79 @@ export default async function CompassPage() {
             withFloorCeiling
           />
         </div>
+      </section>
+
+      <section className="mt-9">
+        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">Habits</h2>
+        <p className="mb-3 px-1 text-xs text-muted text-pretty">
+          Separate from the floor. A habit can run on chosen days and ask for more than one rep,
+          and missing one doesn&apos;t mean the floor gave way. They appear on Today underneath
+          your non-negotiables.
+        </p>
+
+        {habits.length === 0 ? (
+          <EmptyState
+            title="No habits yet"
+            body="Reading, cold plunge, an evening walk — anything you want to build and measure without it being a non-negotiable."
+          />
+        ) : (
+          <ul className="space-y-2">
+            {habits.map((habit) => (
+              <li key={habit.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <Link href={`/habits/${habit.id}`} className="min-w-0 flex-1">
+                    <span className="block leading-snug text-pretty">{habit.name}</span>
+                    <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                      {habit.categoryName ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            aria-hidden
+                            className="h-2 w-2 rounded-full"
+                            style={{ background: categoryColor(habit.categorySlot) }}
+                          />
+                          {habit.categoryName}
+                        </span>
+                      ) : null}
+                      <span>{describeRepeat(habit)}</span>
+                      {habit.target_per_day > 1 ? <span>{habit.target_per_day}×/day</span> : null}
+                      {habit.slot !== "anytime" ? <span>{SLOT_LABEL[habit.slot]}</span> : null}
+                    </span>
+                  </Link>
+                  <span className="shrink-0 text-right">
+                    <span className="block text-sm tabular-nums">{habit.streak}d</span>
+                    <span className="block text-[10px] text-muted">streak</span>
+                  </span>
+                </div>
+
+                <details className="mt-2">
+                  <summary className="inline-flex min-h-8 cursor-pointer list-none items-center text-xs text-muted marker:hidden">
+                    Edit
+                  </summary>
+                  <div className="mt-2 space-y-3">
+                    <HabitForm categories={categories} habit={habit} />
+                    <form action={deleteHabit.bind(null, habit.id)}>
+                      <button
+                        type="submit"
+                        className="min-h-11 w-full rounded-xl border border-border text-sm text-muted"
+                      >
+                        Delete habit and its history
+                      </button>
+                    </form>
+                  </div>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <details className="mt-3 rounded-2xl border border-dashed border-border">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
+            + Add a habit
+          </summary>
+          <div className="border-t border-border px-4 py-3">
+            <HabitForm categories={categories} />
+          </div>
+        </details>
       </section>
 
       <section className="mt-9">

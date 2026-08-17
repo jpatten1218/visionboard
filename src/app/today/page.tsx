@@ -1,5 +1,6 @@
 import { AddGoalForm } from "@/components/add-goal-form";
 import { CategorySelect, Field, FloorCeilingFields, GoalCard } from "@/components/goal-card";
+import { HabitRow } from "@/components/habit-row";
 import { EmptyState, Screen } from "@/components/screen";
 import {
   deleteGoal,
@@ -10,7 +11,7 @@ import {
 } from "@/lib/actions";
 import { categoryColor } from "@/lib/category-color";
 import { countdown, formatDay, getTimezone } from "@/lib/dates";
-import { getCategories, getToday, type Labelled } from "@/lib/queries";
+import { getCategories, getHabits, getToday, type Labelled } from "@/lib/queries";
 
 /**
  * Three or four things is a day's work. More than that is a wish list, and
@@ -20,8 +21,12 @@ const COMMITMENT_GUIDE = 3;
 
 export default async function TodayPage() {
   const timeZone = await getTimezone();
-  const [{ today, atomic, committed, carried, candidates, movedToday }, categories] =
-    await Promise.all([getToday(timeZone), getCategories()]);
+  const [{ today, atomic, committed, carried, candidates, movedToday }, categories, habits] =
+    await Promise.all([getToday(timeZone), getCategories(), getHabits(timeZone)]);
+
+  // Habits sit under the floor: they are built and measured, not sworn to.
+  const dueHabits = habits.filter((habit) => habit.dueToday);
+  const habitsDone = dueHabits.filter((habit) => habit.doneToday).length;
 
   const floorDone = atomic.filter((goal) => goal.doneToday).length;
 
@@ -117,6 +122,21 @@ export default async function TodayPage() {
               withFloorCeiling
             />
           </div>
+
+          {dueHabits.length > 0 ? (
+            <div className="mt-5">
+              <h3 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
+                Habits — {habitsDone} of {dueHabits.length}
+              </h3>
+              <ul className="space-y-2">
+                {dueHabits.map((habit) => (
+                  <li key={habit.id}>
+                    <HabitRow habit={habit} today={today} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </Step>
 
         <Step

@@ -8,6 +8,7 @@ import {
   weekEndOf,
   weekStartOf,
 } from "@/lib/dates";
+import { isDueOn } from "@/lib/habits";
 import { CADENCE_PER_MONTH, IDLE_AFTER_DAYS } from "@/lib/programs";
 import { IMAGE_BUCKET, supabaseAdmin } from "@/lib/supabase";
 import type {
@@ -16,6 +17,8 @@ import type {
   EvidenceEntryRow,
   GoalCompletionRow,
   GoalRow,
+  HabitLogRow,
+  HabitRow,
   JournalEntryRow,
   ProgramEngagementRow,
   ProgramRow,
@@ -728,6 +731,137 @@ export async function getPrograms(timeZone: string): Promise<ProgramBoard> {
     ),
     endingSoon: soon.sort((a, b) => (a.ends_on ?? "").localeCompare(b.ends_on ?? "")),
   };
+}
+
+export type HabitView = HabitRow & {
+  categoryName: string | null;
+  categorySlot: number | null;
+  /** Reps logged today, against target_per_day. */
+  todayCount: number;
+  doneToday: boolean;
+  dueToday: boolean;
+  streak: number;
+  longestStreak: number;
+  /** Days met, days it asked, and the ratio, over the trailing window. */
+  successDays: number;
+  scheduledDays: number;
+  missedDays: number;
+  consistencyPct: number;
+  totalLogged: number;
+  /** Every logged date, newest first — the calendar and charts read from this. */
+  loggedDates: string[];
+};
+
+const HABIT_WINDOW_DAYS = 365;
+
+/**
+ * Habit stats are computed against the days a habit actually asked for. A
+ * three-days-a-week habit should not be scored as if it were daily.
+ */
+function summariseHabit(habit: HabitRow, logs: HabitLogRow[], today: string): {
+  streak: number;
+  longestStreak: number;
+  successDays: number;
+  scheduledDays: number;
+  missedDays: number;
+  consistencyPct: number;
+} {
+  const met = new Set(
+    logs.filter((log) => log.count >= habit.target_per_day).map((log) => log.logged_on),
+  );
+
+  const start =
+    habit.started_on > recentDays(today, HABIT_WINDOW_DAYS)[0]
+      ? habit.started_on
+      : recentDays(today, HABIT_WINDOW_DAYS)[0];
+
+  const days: string[] = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const end = new Date(`${today}T00:00:00Z`);
+  while (cursor <= end) {
+    const iso = cursor.toISOString().slice(0, 10);
+    if (isDueOn(habit, iso)) days.push(iso);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  let streak = 0;
+  let longestStreak = 0;
+  let running = 0;
+  for (const day of days) {
+    if (met.has(day)) {
+      running += 1;
+      longestStreak = Math.max(longestStreak, running);
+    } else {
+      running = 0;
+    }
+  }
+
+  // Count back from the most recent due day. Today not being done yet does not
+  // break a streak — the day isn't over.
+  for (let index = days.length - 1; index >= 0; index--) {
+    const day = days[index];
+    if (met.has(day)) streak += 1;
+    else if (day === today) continue;
+    else break;
+  }
+
+  const scheduledDays = days.filter((day) => day !== today || met.has(day)).length;
+  const successDays = days.filter((day) => met.has(day)).length;
+
+  return {
+    streak,
+    longestStreak,
+    successDays,
+    scheduledDays,
+    missedDays: Math.max(0, scheduledDays - successDays),
+    consistencyPct: scheduledDays === 0 ? 0 : Math.round((successDays / scheduledDays) * 100),
+  };
+}
+
+export async function getHabits(timeZone: string, includeArchived = false): Promise<HabitView[]> {
+  const db = supabaseAdmin();
+  const today = todayIn(timeZone);
+
+  const habitQuery = db.from("habits").select("*").order("sort_order").order("created_at");
+  const [habitsResult, logsResult, categories] = await Promise.all([
+    includeArchived ? habitQuery : habitQuery.is("archived_at", null),
+    db.from("habit_logs").select("*").order("logged_on", { ascending: false }),
+    getCategories(),
+  ]);
+  fail("Loading habits", habitsResult.error);
+  fail("Loading habit logs", logsResult.error);
+
+  const byCategory = new Map(categories.map((category) => [category.id, category]));
+  const logs = (logsResult.data ?? []) as HabitLogRow[];
+  const byHabit = new Map<string, HabitLogRow[]>();
+  for (const log of logs) {
+    byHabit.set(log.habit_id, [...(byHabit.get(log.habit_id) ?? []), log]);
+  }
+
+  return ((habitsResult.data ?? []) as HabitRow[]).map((habit) => {
+    const mine = byHabit.get(habit.id) ?? [];
+    const todayLog = mine.find((log) => log.logged_on === today);
+    const category = habit.category_id ? byCategory.get(habit.category_id) : undefined;
+
+    return {
+      ...habit,
+      categoryName: category?.name ?? null,
+      categorySlot: category?.color_slot ?? null,
+      todayCount: todayLog?.count ?? 0,
+      doneToday: (todayLog?.count ?? 0) >= habit.target_per_day,
+      dueToday: isDueOn(habit, today),
+      totalLogged: mine.reduce((sum, log) => sum + log.count, 0),
+      loggedDates: mine
+        .filter((log) => log.count >= habit.target_per_day)
+        .map((log) => log.logged_on),
+      ...summariseHabit(habit, mine, today),
+    };
+  });
+}
+
+export async function getHabit(id: string, timeZone: string): Promise<HabitView | null> {
+  const habits = await getHabits(timeZone, true);
+  return habits.find((habit) => habit.id === id) ?? null;
 }
 
 export async function getJournal(): Promise<Map<string, string>> {

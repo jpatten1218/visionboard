@@ -7,6 +7,8 @@ import { PALETTE_SLOTS } from "@/lib/category-color";
 import type {
   GoalDomain,
   GoalTier,
+  HabitRepeat,
+  HabitSlot,
   IdeaPriority,
   ProgramCadence,
   ProgramStatus,
@@ -457,6 +459,107 @@ export async function logProgramEngagement(id: string, day: string) {
     .from("program_engagements")
     .upsert({ program_id: id, engaged_on: day }, { onConflict: "program_id,engaged_on" });
   assertOk("Logging the session", error);
+  refresh();
+}
+
+function habitFields(formData: FormData) {
+  const repeatKind = (text(formData.get("repeat_kind")) as HabitRepeat | null) ?? "daily";
+  // Checkbox group: only the ticked days come through.
+  const weekdays = formData
+    .getAll("weekdays")
+    .map((value) => Number(value))
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+
+  const target = Number(text(formData.get("target_per_day")) ?? "1");
+
+  return {
+    name: text(formData.get("name")),
+    detail: text(formData.get("detail")),
+    category_id: text(formData.get("category_id")),
+    repeat_kind: repeatKind,
+    // A weekday habit with no days chosen is rejected by the database, so
+    // fall back to every day rather than failing the save.
+    weekdays: repeatKind === "weekdays" && weekdays.length > 0 ? weekdays : [],
+    repeat_fallback: repeatKind === "weekdays" && weekdays.length === 0,
+    target_per_day: Number.isFinite(target) ? Math.max(1, Math.min(50, Math.round(target))) : 1,
+    slot: (text(formData.get("slot")) as HabitSlot | null) ?? "anytime",
+    ends_on: text(formData.get("ends_on")),
+  };
+}
+
+export async function addHabit(formData: FormData) {
+  const { name, repeat_fallback, ...fields } = habitFields(formData);
+  if (!name) return;
+
+  const db = supabaseAdmin();
+  const { error } = await db.from("habits").insert({
+    ...fields,
+    name,
+    repeat_kind: repeat_fallback ? "daily" : fields.repeat_kind,
+  });
+  assertOk("Adding the habit", error);
+  refresh();
+}
+
+export async function updateHabit(id: string, formData: FormData) {
+  const { name, repeat_fallback, ...fields } = habitFields(formData);
+  if (!name) return;
+
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("habits")
+    .update({ ...fields, name, repeat_kind: repeat_fallback ? "daily" : fields.repeat_kind })
+    .eq("id", id);
+  assertOk("Updating the habit", error);
+  refresh();
+}
+
+/** Archiving keeps the history; deleting would throw away the streak. */
+export async function archiveHabit(id: string, archived: boolean) {
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("habits")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", id);
+  assertOk("Archiving the habit", error);
+  refresh();
+}
+
+export async function deleteHabit(id: string) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("habits").delete().eq("id", id);
+  assertOk("Removing the habit", error);
+  refresh();
+}
+
+/**
+ * Steps a habit's count for a day. Habits asking for one rep toggle; habits
+ * asking for several count up and wrap back to zero once the target is met.
+ */
+export async function stepHabitLog(id: string, day: string, target: number) {
+  const db = supabaseAdmin();
+  const { data: existing, error: readError } = await db
+    .from("habit_logs")
+    .select("id, count")
+    .eq("habit_id", id)
+    .eq("logged_on", day)
+    .maybeSingle();
+  assertOk("Reading the day's log", readError);
+
+  const next = (existing?.count ?? 0) + 1;
+
+  if (!existing) {
+    const { error } = await db
+      .from("habit_logs")
+      .insert({ habit_id: id, logged_on: day, count: 1 });
+    assertOk("Logging the habit", error);
+  } else if (next > target) {
+    const { error } = await db.from("habit_logs").delete().eq("id", existing.id);
+    assertOk("Clearing the day", error);
+  } else {
+    const { error } = await db.from("habit_logs").update({ count: next }).eq("id", existing.id);
+    assertOk("Updating the count", error);
+  }
   refresh();
 }
 

@@ -18,6 +18,37 @@ export type ProgramCadence =
   | "self_paced"
   | "none";
 export type ProgramStatus = "active" | "completed" | "lapsed" | "not_started";
+export type HabitRepeat = "daily" | "weekdays";
+export type HabitSlot = "anytime" | "morning" | "afternoon" | "evening";
+
+export type HabitRow = {
+  id: string;
+  owner_id: string;
+  name: string;
+  detail: string | null;
+  category_id: string | null;
+  repeat_kind: HabitRepeat;
+  /** 0 = Sunday. Only meaningful when repeat_kind is "weekdays". */
+  weekdays: number[];
+  target_per_day: number;
+  slot: HabitSlot;
+  started_on: string;
+  ends_on: string | null;
+  archived_at: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HabitLogRow = {
+  id: string;
+  owner_id: string;
+  habit_id: string;
+  logged_on: string;
+  count: number;
+  note: string | null;
+  created_at: string;
+};
 
 export type ProgramRow = {
   id: string;
@@ -172,6 +203,8 @@ export type Database = {
       evidence_entries: TableShape<EvidenceEntryRow, "title">;
       programs: TableShape<ProgramRow, "name">;
       program_engagements: TableShape<ProgramEngagementRow, "program_id" | "engaged_on">;
+      habits: TableShape<HabitRow, "name">;
+      habit_logs: TableShape<HabitLogRow, "habit_id" | "logged_on">;
       goal_completions: TableShape<GoalCompletionRow, "goal_id">;
       avoidance_items: TableShape<AvoidanceItemRow, "idea">;
       weekly_reviews: TableShape<WeeklyReviewRow, "week_start">;
