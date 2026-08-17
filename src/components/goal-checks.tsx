@@ -1,13 +1,18 @@
-import { saveGoalChecks } from "@/lib/actions";
+"use client";
+
+import { useState, useTransition } from "react";
+
+import { saveGoalChecks, setBlockedBy } from "@/lib/actions";
 import type { CheckRating, GoalRow } from "@/lib/database.types";
 
 /**
- * Section 05's three checks. Answered on the way in, and worth re-reading at
- * review — a goal that drains you and changes little is the one to drop.
+ * Section 05's three checks. They save the moment you tap, because the
+ * previous version needed a separate Save press and gave no feedback at all
+ * until it happened — which is indistinguishable from being broken.
  */
-const CHECKS: { name: string; question: string; options: [CheckRating, string][] }[] = [
+const CHECKS: { key: Field; question: string; options: [CheckRating, string][] }[] = [
   {
-    name: "check_alignment",
+    key: "check_alignment",
     question: "Does this align with the bigger vision?",
     options: [
       ["high", "Squarely"],
@@ -16,7 +21,7 @@ const CHECKS: { name: string; question: string; options: [CheckRating, string][]
     ],
   },
   {
-    name: "check_energy",
+    key: "check_energy",
     question: "Does it excite you or drain you?",
     options: [
       ["high", "Excites"],
@@ -25,7 +30,7 @@ const CHECKS: { name: string; question: string; options: [CheckRating, string][]
     ],
   },
   {
-    name: "check_impact",
+    key: "check_impact",
     question: "Will it make a meaningful difference?",
     options: [
       ["high", "Big"],
@@ -35,49 +40,64 @@ const CHECKS: { name: string; question: string; options: [CheckRating, string][]
   },
 ];
 
-export function GoalChecks({ goal, compact }: { goal: GoalRow; compact?: boolean }) {
-  const current: Record<string, CheckRating | null> = {
+type Field = "check_alignment" | "check_energy" | "check_impact";
+type Answers = Record<Field, CheckRating | null>;
+
+export function GoalChecks({ goal }: { goal: GoalRow }) {
+  const [answers, setAnswers] = useState<Answers>({
     check_alignment: goal.check_alignment,
     check_energy: goal.check_energy,
     check_impact: goal.check_impact,
-  };
+  });
+  const [pending, startTransition] = useTransition();
+  const [saved, setSaved] = useState(false);
+
+  function choose(field: Field, value: CheckRating) {
+    // Tapping the same answer again clears it, so a mis-tap is recoverable.
+    const next: Answers = { ...answers, [field]: answers[field] === value ? null : value };
+    setAnswers(next);
+    setSaved(false);
+
+    const form = new FormData();
+    // All three go every time — the action writes the whole set.
+    for (const key of ["check_alignment", "check_energy", "check_impact"] as Field[]) {
+      if (next[key]) form.set(key, next[key]!);
+    }
+    startTransition(async () => {
+      await saveGoalChecks(goal.id, form);
+      setSaved(true);
+    });
+  }
 
   return (
-    <form action={saveGoalChecks.bind(null, goal.id)} className="space-y-3">
+    <div className="space-y-3">
       {CHECKS.map((check) => (
-        <fieldset key={check.name}>
+        <fieldset key={check.key}>
           <legend className="mb-1.5 text-xs text-muted text-pretty">{check.question}</legend>
           <div className="flex gap-1.5">
             {check.options.map(([value, label]) => {
-              const active = current[check.name] === value;
+              const active = answers[check.key] === value;
               return (
-                <label
+                <button
                   key={value}
-                  className={`min-h-11 flex-1 cursor-pointer rounded-xl border text-center text-xs leading-[2.75rem] ${
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => choose(check.key, value)}
+                  className={`min-h-11 flex-1 rounded-xl border text-xs ${
                     active ? "border-accent bg-accent text-accent-fg" : "border-border text-muted"
                   }`}
                 >
-                  <input
-                    type="radio"
-                    name={check.name}
-                    value={value}
-                    defaultChecked={active}
-                    className="sr-only"
-                  />
                   {label}
-                </label>
+                </button>
               );
             })}
           </div>
         </fieldset>
       ))}
-      <button
-        type="submit"
-        className="min-h-11 w-full rounded-xl border border-border text-sm text-muted"
-      >
-        {compact ? "Save answers" : "Save the checks"}
-      </button>
-    </form>
+      <p className="h-4 text-right text-[11px] text-muted">
+        {pending ? "Saving…" : saved ? "Saved" : ""}
+      </p>
+    </div>
   );
 }
 
@@ -109,5 +129,61 @@ export function ChecksSummary({ goal }: { goal: GoalRow }) {
         ) : null,
       )}
     </dl>
+  );
+}
+
+/** Same problem, same fix: choosing a prerequisite saves on change. */
+export function BlockedBySelect({
+  goal,
+  options,
+}: {
+  goal: GoalRow;
+  options: { id: string; title: string }[];
+}) {
+  const [value, setValue] = useState(goal.blocked_by ?? "");
+  const [pending, startTransition] = useTransition();
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function change(next: string) {
+    const previous = value;
+    setValue(next);
+    setSaved(false);
+    setError(null);
+
+    const form = new FormData();
+    form.set("blocked_by", next);
+    startTransition(async () => {
+      try {
+        await setBlockedBy(goal.id, form);
+        setSaved(true);
+      } catch (cause) {
+        // A rejected cycle must not leave the control showing a value that
+        // was never stored.
+        setValue(previous);
+        setError(cause instanceof Error ? cause.message : "That didn't save.");
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={value}
+        onChange={(event) => change(event.target.value)}
+        aria-label="This goal waits on"
+        className="min-h-11 w-full rounded-xl border border-border bg-surface-sunk px-3 outline-none focus:border-accent"
+      >
+        <option value="">Nothing — this can run now</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.title}
+          </option>
+        ))}
+      </select>
+      <p className="h-4 text-[11px] text-muted">
+        {pending ? "Saving…" : error ? <span className="text-tier-atomic">{error}</span> : saved ? "Saved" : ""}
+      </p>
+    </div>
   );
 }

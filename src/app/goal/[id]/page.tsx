@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { AddGoalForm } from "@/components/add-goal-form";
 import { GoalCard } from "@/components/goal-card";
 import { Screen } from "@/components/screen";
-import { ChecksSummary, GoalChecks } from "@/components/goal-checks";
+import { BlockedBySelect, ChecksSummary, GoalChecks } from "@/components/goal-checks";
 import {
   completeGoal,
   deleteGoal,
@@ -13,7 +13,6 @@ import {
   recommitGoal,
   removeGoalImage,
   reopenGoal,
-  setBlockedBy,
   shelveGoal,
   uploadGoalImage,
 } from "@/lib/actions";
@@ -96,29 +95,9 @@ export default async function GoalPage({ params }: PageProps<"/goal/[id]">) {
         <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
           Does something have to happen first?
         </summary>
-        <form
-          action={setBlockedBy.bind(null, macro.id)}
-          className="space-y-2 border-t border-border px-4 py-3"
-        >
-          <select
-            name="blocked_by"
-            defaultValue={macro.blocked_by ?? ""}
-            className="min-h-11 w-full rounded-xl border border-border bg-surface-sunk px-3 outline-none focus:border-accent"
-          >
-            <option value="">Nothing — this can run now</option>
-            {others.map((other) => (
-              <option key={other.id} value={other.id}>
-                {other.title}
-              </option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            className="min-h-11 w-full rounded-xl border border-border text-sm text-muted"
-          >
-            Save
-          </button>
-        </form>
+        <div className="border-t border-border px-4 py-3">
+          <BlockedBySelect goal={macro} options={others} />
+        </div>
       </details>
 
       <p className="mt-4 px-1 text-xs text-muted">

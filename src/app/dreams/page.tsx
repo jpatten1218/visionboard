@@ -163,7 +163,7 @@ function Candidate({ goal, shelved }: { goal: GoalRow; shelved?: boolean }) {
           Run the three checks
         </summary>
         <div className="mt-2">
-          <GoalChecks goal={goal} compact />
+          <GoalChecks goal={goal} />
         </div>
       </details>
 
