@@ -7,7 +7,7 @@ import { PALETTE_SLOTS } from "@/lib/category-color";
 import type { GoalDomain, GoalTier, IdeaPriority } from "@/lib/database.types";
 import { TIMEZONE_COOKIE, getTimezone, isValidTimezone, todayIn, weekStartOf } from "@/lib/dates";
 import { getAvoidanceBoard } from "@/lib/queries";
-import { supabaseAdmin } from "@/lib/supabase";
+import { IMAGE_BUCKET, supabaseAdmin } from "@/lib/supabase";
 
 const A_YEAR = 60 * 60 * 24 * 365;
 
@@ -143,6 +143,70 @@ export async function toggleHabitDay(goalId: string, day: string, hitCeiling = f
     const { error } = await db.from("goal_completions").delete().eq("id", existing.id);
     assertOk("Clearing the day", error);
   }
+  refresh();
+}
+
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Attaches a picture to a macro goal. It is a vision board — a photo of the
+ * thing does work that a sentence does not.
+ */
+export async function uploadGoalImage(goalId: string, formData: FormData) {
+  const file = formData.get("image");
+  if (!(file instanceof File) || file.size === 0) return;
+
+  if (!IMAGE_TYPES.includes(file.type)) {
+    throw new Error(`That file type isn't supported (${file.type || "unknown"}).`);
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error("That image is over 8MB. Try a smaller one.");
+  }
+
+  const db = supabaseAdmin();
+  const { data: existing, error: readError } = await db
+    .from("goals")
+    .select("image_path")
+    .eq("id", goalId)
+    .maybeSingle();
+  assertOk("Finding the goal", readError);
+
+  const extension = file.type.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+  // Randomised name so replacing an image never collides with a cached URL.
+  const path = `${goalId}/${crypto.randomUUID()}.${extension}`;
+
+  const { error: uploadError } = await db.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, file, { contentType: file.type });
+  assertOk("Uploading the image", uploadError);
+
+  const { error: updateError } = await db
+    .from("goals")
+    .update({ image_path: path })
+    .eq("id", goalId);
+  assertOk("Attaching the image", updateError);
+
+  // Best effort: an orphaned old file is untidy, not broken.
+  if (existing?.image_path) {
+    await db.storage.from(IMAGE_BUCKET).remove([existing.image_path]);
+  }
+  refresh();
+}
+
+export async function removeGoalImage(goalId: string) {
+  const db = supabaseAdmin();
+  const { data: existing, error: readError } = await db
+    .from("goals")
+    .select("image_path")
+    .eq("id", goalId)
+    .maybeSingle();
+  assertOk("Finding the goal", readError);
+  if (!existing?.image_path) return;
+
+  const { error } = await db.from("goals").update({ image_path: null }).eq("id", goalId);
+  assertOk("Removing the image", error);
+  await db.storage.from(IMAGE_BUCKET).remove([existing.image_path]);
   refresh();
 }
 

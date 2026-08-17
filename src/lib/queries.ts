@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  daysBetween,
   monthEndOf,
   nextDay,
   quarterEndOf,
@@ -9,7 +10,7 @@ import {
   weekEndOf,
   weekStartOf,
 } from "@/lib/dates";
-import { supabaseAdmin } from "@/lib/supabase";
+import { IMAGE_BUCKET, supabaseAdmin } from "@/lib/supabase";
 import type {
   AvoidanceItemRow,
   CategoryRow,
@@ -21,7 +22,39 @@ import type {
   WeeklyReviewRow,
 } from "@/lib/database.types";
 
-export type GoalNode = GoalRow & { children: GoalNode[]; category: CategoryRow | null };
+export type GoalNode = GoalRow & {
+  children: GoalNode[];
+  category: CategoryRow | null;
+  /** Short-lived URL for `image_path`; the bucket is private. */
+  imageUrl?: string | null;
+  /** Last date anything under this goal was finished, or when it was written. */
+  lastMovedOn?: string;
+  /** Days since that, once past the threshold. Null means it is moving. */
+  stalledDays?: number | null;
+};
+
+/** A macro goal with nothing finished under it for this long has stalled. */
+export const STALLED_AFTER_DAYS = 30;
+
+/**
+ * Signed URLs for private bucket objects, in one round trip. Missing or
+ * failed paths simply come back absent rather than breaking the page.
+ */
+async function signImages(paths: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(paths.filter(Boolean))];
+  if (unique.length === 0) return new Map();
+
+  const db = supabaseAdmin();
+  // An hour is long enough for a session without minting near-permanent links.
+  const { data, error } = await db.storage.from(IMAGE_BUCKET).createSignedUrls(unique, 3600);
+  if (error) return new Map();
+
+  const pairs: [string, string][] = [];
+  for (const entry of data ?? []) {
+    if (entry.path && entry.signedUrl) pairs.push([entry.path, entry.signedUrl]);
+  }
+  return new Map(pairs);
+}
 
 export async function getCategories(): Promise<CategoryRow[]> {
   const db = supabaseAdmin();
@@ -39,7 +72,7 @@ function fail(context: string, error: { message: string } | null): never | void 
 }
 
 /** Macro goals with their micro and mini goals nested underneath. */
-export async function getPyramid(): Promise<GoalNode[]> {
+export async function getPyramid(timeZone: string): Promise<GoalNode[]> {
   const db = supabaseAdmin();
   const [goalsResult, categories] = await Promise.all([
     db
@@ -72,6 +105,27 @@ export async function getPyramid(): Promise<GoalNode[]> {
     else if (node.tier === "macro" && node.status === "active") roots.push(node);
   }
 
+  const today = todayIn(timeZone);
+  const signed = await signImages(roots.map((macro) => macro.image_path ?? ""));
+
+  for (const macro of roots) {
+    // Movement means something under the goal actually got finished. Falling
+    // back to when it was written stops a brand-new goal reading as stalled.
+    const finishes = [
+      ...macro.children.flatMap((micro) => [micro, ...micro.children]),
+    ]
+      .map((child) => child.completed_at)
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.slice(0, 10));
+
+    const lastMovedOn = finishes.sort().at(-1) ?? macro.created_at.slice(0, 10);
+    const idleDays = daysBetween(lastMovedOn, today);
+
+    macro.lastMovedOn = lastMovedOn;
+    macro.stalledDays = idleDays > STALLED_AFTER_DAYS ? idleDays : null;
+    macro.imageUrl = macro.image_path ? signed.get(macro.image_path) ?? null : null;
+  }
+
   // Grouped by category so swiping across the board moves through one area of
   // life at a time. Uncategorised macros trail the end.
   const rank = new Map(categories.map((category, index) => [category.id, index]));
@@ -83,7 +137,7 @@ export async function getPyramid(): Promise<GoalNode[]> {
 }
 
 /** One macro goal with its micro goals and their minis, for the detail screen. */
-export async function getMacroGoal(id: string): Promise<GoalNode | null> {
+export async function getMacroGoal(id: string, timeZone: string): Promise<GoalNode | null> {
   const db = supabaseAdmin();
   // Parameterised equality rather than an interpolated `.or()` filter, so a
   // hand-crafted URL cannot smuggle PostgREST syntax into the query.
@@ -121,10 +175,22 @@ export async function getMacroGoal(id: string): Promise<GoalNode | null> {
   const category = macro.category_id
     ? categories.find((entry) => entry.id === macro.category_id) ?? null
     : null;
+  const signed = await signImages([macro.image_path ?? ""]);
+
+  // Same rule as the board: movement means something under it got finished.
+  const finishes = [...micros, ...((miniRows ?? []) as GoalRow[])]
+    .map((child) => child.completed_at)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.slice(0, 10));
+  const lastMovedOn = finishes.sort().at(-1) ?? macro.created_at.slice(0, 10);
+  const idleDays = daysBetween(lastMovedOn, todayIn(timeZone));
 
   return {
     ...macro,
     category,
+    imageUrl: macro.image_path ? signed.get(macro.image_path) ?? null : null,
+    lastMovedOn,
+    stalledDays: idleDays > STALLED_AFTER_DAYS ? idleDays : null,
     children: micros.map((micro) => ({
       ...micro,
       category: null,

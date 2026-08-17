@@ -85,6 +85,32 @@ export function recentDays(isoDate: string, count: number): string[] {
   return days;
 }
 
+/** Whole days from `from` to `to`. Negative when `to` is in the past. */
+export function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  return Math.round((b - a) / 86_400_000);
+}
+
+/**
+ * A countdown reads harder than a date — "17 days" lands where "3 Sep" does
+ * not. Beyond a season it softens to weeks and months so a target eighteen
+ * months out doesn't shout a five-hundred-day number.
+ */
+export function countdown(targetOn: string, today: string): { label: string; overdue: boolean } {
+  const days = daysBetween(today, targetOn);
+
+  if (days === 0) return { label: "Today", overdue: false };
+  if (days === 1) return { label: "Tomorrow", overdue: false };
+  if (days === -1) return { label: "Yesterday", overdue: true };
+  if (days < 0) return { label: `${-days} days ago`, overdue: true };
+  if (days <= 90) return { label: `${days} days`, overdue: false };
+
+  const months = Math.round(days / 30.44);
+  if (months < 18) return { label: `${months} months`, overdue: false };
+  return { label: `${Math.round(months / 12)} years`, overdue: false };
+}
+
 export function formatDay(isoDate: string): string {
   // The string is already a calendar date in the user's zone, so it is read
   // back at UTC noon to keep the formatter from shifting it a day either way.

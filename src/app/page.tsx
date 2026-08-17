@@ -1,14 +1,17 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { AddGoalForm } from "@/components/add-goal-form";
 import { EmptyState, Screen } from "@/components/screen";
 import { categoryColor } from "@/lib/category-color";
-import { formatDay } from "@/lib/dates";
+import { countdown, getTimezone, todayIn } from "@/lib/dates";
 import { getCategories, getPyramid, type GoalNode } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function BoardPage() {
-  const [macros, categories] = await Promise.all([getPyramid(), getCategories()]);
+  const timeZone = await getTimezone();
+  const [macros, categories] = await Promise.all([getPyramid(timeZone), getCategories()]);
+  const today = todayIn(timeZone);
 
   // getPyramid already orders by category, so grouping is a single pass.
   const groups = new Map<string, { name: string; color: string; macros: GoalNode[] }>();
@@ -45,7 +48,7 @@ export default async function BoardPage() {
               <ul className="space-y-2">
                 {group.macros.map((macro) => (
                   <li key={macro.id}>
-                    <MacroLink macro={macro} color={group.color} />
+                    <MacroLink macro={macro} color={group.color} today={today} />
                   </li>
                 ))}
               </ul>
@@ -72,10 +75,11 @@ export default async function BoardPage() {
   );
 }
 
-function MacroLink({ macro, color }: { macro: GoalNode; color: string }) {
+function MacroLink({ macro, color, today }: { macro: GoalNode; color: string; today: string }) {
   const total = macro.children.length;
   const done = macro.children.filter((micro) => micro.status === "done").length;
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  const clock = macro.target_on ? countdown(macro.target_on, today) : null;
 
   return (
     <Link
@@ -84,11 +88,29 @@ function MacroLink({ macro, color }: { macro: GoalNode; color: string }) {
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
 
+      {macro.imageUrl ? (
+        <Image
+          src={macro.imageUrl}
+          alt=""
+          width={104}
+          height={104}
+          sizes="52px"
+          className="h-13 w-13 shrink-0 rounded-xl object-cover"
+        />
+      ) : null}
+
       <span className="min-w-0 flex-1">
         <span className="block leading-snug text-pretty">{macro.title}</span>
-        <span className="mt-1 block text-xs text-muted">
-          {total === 0 ? "No micro goals yet" : `${done} of ${total} micro goals`}
-          {macro.target_on ? ` · Target ${formatDay(macro.target_on)}` : ""}
+        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span>{total === 0 ? "No micro goals yet" : `${done} of ${total} micro goals`}</span>
+          {clock ? (
+            <span className={clock.overdue ? "text-tier-atomic" : ""}>{clock.label}</span>
+          ) : null}
+          {macro.stalledDays ? (
+            <span className="rounded-full border border-tier-atomic/40 px-1.5 py-0.5 text-[10px] text-tier-atomic">
+              Stalled {macro.stalledDays}d
+            </span>
+          ) : null}
         </span>
         {total > 0 ? (
           <span

@@ -1,26 +1,71 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AddGoalForm } from "@/components/add-goal-form";
 import { GoalCard } from "@/components/goal-card";
 import { Screen } from "@/components/screen";
-import { completeGoal, deleteGoal, reopenGoal } from "@/lib/actions";
-import { formatDay } from "@/lib/dates";
+import {
+  completeGoal,
+  deleteGoal,
+  removeGoalImage,
+  reopenGoal,
+  uploadGoalImage,
+} from "@/lib/actions";
+import { countdown, formatDay, getTimezone, todayIn } from "@/lib/dates";
 import { getCategories, getMacroGoal, type GoalNode } from "@/lib/queries";
 
 export default async function GoalPage({ params }: PageProps<"/goal/[id]">) {
   const { id } = await params;
-  const [macro, categories] = await Promise.all([getMacroGoal(id), getCategories()]);
+  const timeZone = await getTimezone();
+  const [macro, categories] = await Promise.all([getMacroGoal(id, timeZone), getCategories()]);
   if (!macro) notFound();
 
   const open = macro.children.filter((micro) => micro.status === "active");
   const done = macro.children.filter((micro) => micro.status === "done");
+  const clock = macro.target_on ? countdown(macro.target_on, todayIn(timeZone)) : null;
 
   return (
     <Screen eyebrow={macro.category?.name ?? "Macro goal"} title={macro.title}>
       <Link href="/" className="mb-4 inline-flex min-h-11 items-center text-sm text-muted">
         ← All goals
       </Link>
+
+      {macro.imageUrl ? (
+        <div className="relative mb-3 aspect-[3/2] overflow-hidden rounded-2xl bg-surface-sunk">
+          <Image
+            src={macro.imageUrl}
+            alt=""
+            fill
+            sizes="(max-width: 42rem) 100vw, 42rem"
+            className="object-cover"
+            priority
+          />
+        </div>
+      ) : null}
+
+      <ImageControls goalId={macro.id} hasImage={Boolean(macro.imageUrl)} />
+
+      {clock ? (
+        <p className="mb-3 flex items-baseline gap-2">
+          <span
+            className={`font-serif text-3xl tabular-nums ${clock.overdue ? "text-tier-atomic" : ""}`}
+          >
+            {clock.label}
+          </span>
+          <span className="text-sm text-muted">
+            {clock.overdue ? "past target" : "to go"} · {formatDay(macro.target_on!)}
+          </span>
+        </p>
+      ) : null}
+
+      {macro.stalledDays ? (
+        <p className="mb-3 rounded-2xl border border-tier-atomic/40 bg-tier-atomic/5 px-4 py-3 text-sm text-pretty">
+          <strong className="font-medium">Stalled {macro.stalledDays} days.</strong> Nothing under
+          this has been finished since {formatDay(macro.lastMovedOn!)}. Is this still true, or is it
+          avoidance? Either answer is fine — but pick one.
+        </p>
+      ) : null}
 
       <GoalCard goal={macro} category={macro.category} categories={categories} />
 
@@ -76,6 +121,54 @@ export default async function GoalPage({ params }: PageProps<"/goal/[id]">) {
   );
 }
 
+/**
+ * It is a vision board, so a macro goal can carry a picture of the thing.
+ * `accept="image/*"` is what makes iOS offer the photo library and the camera
+ * rather than a file browser.
+ */
+function ImageControls({ goalId, hasImage }: { goalId: string; hasImage: boolean }) {
+  return (
+    <details className="mb-3 rounded-2xl border border-dashed border-border">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
+        {hasImage ? "Change image" : "+ Add an image"}
+      </summary>
+
+      <form
+        action={uploadGoalImage.bind(null, goalId)}
+        className="space-y-2 border-t border-border px-4 py-3"
+      >
+        <input
+          type="file"
+          name="image"
+          accept="image/*"
+          required
+          className="w-full text-sm text-muted file:mr-3 file:min-h-11 file:rounded-xl file:border-0 file:bg-surface-sunk file:px-4 file:text-sm file:text-foreground"
+        />
+        <button
+          type="submit"
+          className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg"
+        >
+          Upload
+        </button>
+      </form>
+
+      {hasImage ? (
+        <form
+          action={removeGoalImage.bind(null, goalId)}
+          className="border-t border-border px-4 py-3"
+        >
+          <button
+            type="submit"
+            className="min-h-11 w-full rounded-xl border border-border text-sm text-muted"
+          >
+            Remove image
+          </button>
+        </form>
+      ) : null}
+    </details>
+  );
+}
+
 function MicroGoal({ micro }: { micro: GoalNode }) {
   const open = micro.children.filter((mini) => mini.status === "active");
   const done = micro.children.filter((mini) => mini.status === "done");
@@ -84,10 +177,9 @@ function MicroGoal({ micro }: { micro: GoalNode }) {
 
   return (
     <GoalCard goal={micro}>
-      {/* Collapsed once it has content, so a goal with ten micros reads as a
-          list rather than a wall. A micro with no minis yet opens, because
-          the thing it needs is the form inside. */}
-      <details open={!hasMinis} className="group mt-2">
+      {/* Everything below the title folds away — the mini list and the form to
+          add more — so a goal with ten micros reads as a list of titles. */}
+      <details className="group mt-2">
         <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 text-xs text-muted marker:hidden">
           <svg
             viewBox="0 0 24 24"
@@ -101,7 +193,9 @@ function MicroGoal({ micro }: { micro: GoalNode }) {
           >
             <path d="M9 5l7 7-7 7" />
           </svg>
-          {hasMinis ? `${done.length} of ${micro.children.length} mini goals done` : "Add mini goals"}
+          {hasMinis
+            ? `${done.length} of ${micro.children.length} mini goals done`
+            : "No mini goals yet"}
         </summary>
 
         {hasMinis ? (

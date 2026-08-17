@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const [pyramid, universal, today, evidence, avoidance, week, categories] = await Promise.all([
-      getPyramid(),
+      getPyramid(timeZone),
       getUniversalGoals(),
       getToday(timeZone),
       getEvidence(),
