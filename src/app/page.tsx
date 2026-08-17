@@ -1,21 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { AddGoalForm } from "@/components/add-goal-form";
 import { EmptyState, Screen } from "@/components/screen";
-import { FOCUS_CAP, FOCUS_FLOOR } from "@/lib/focus";
 import { categoryColor } from "@/lib/category-color";
 import { countdown, getTimezone, todayIn } from "@/lib/dates";
-import { getCategories, getMacroStages, getPyramid, type GoalNode } from "@/lib/queries";
+import { getMacroStages, getPyramid, type GoalNode } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function BoardPage() {
   const timeZone = await getTimezone();
-  const [macros, categories, { dreams }] = await Promise.all([
-    getPyramid(timeZone),
-    getCategories(),
-    getMacroStages(),
-  ]);
+  const [macros, { dreams }] = await Promise.all([getPyramid(timeZone), getMacroStages()]);
   const today = todayIn(timeZone);
 
   // getPyramid already orders by category, so grouping is a single pass.
@@ -31,42 +25,19 @@ export default async function BoardPage() {
     groups.set(key, group);
   }
 
-  const overCap = macros.length > FOCUS_CAP;
-  const needsTriage = dreams.length > 0 || overCap;
-
   return (
     <Screen eyebrow="The board" title="Everything ladders up.">
-      {/* Always reachable, loud only when something needs deciding. */}
+      {/* One quiet line, not a warning. The dream board is where deciding
+          happens; the board itself just shows what won. */}
       <Link
-        href="/triage"
-        className={`mb-5 flex items-center gap-3 rounded-2xl border px-4 py-3 ${
-          overCap
-            ? "border-tier-atomic/40 bg-tier-atomic/5"
-            : needsTriage
-              ? "border-border bg-surface-sunk"
-              : "border-border"
-        }`}
+        href="/dreams"
+        className="mb-5 flex min-h-11 items-center gap-2 text-sm text-muted"
       >
-        <span className="min-w-0 flex-1 text-sm text-pretty">
-          {overCap ? (
-            <>
-              <strong className="font-medium">{macros.length} goals in focus.</strong> The method
-              calls for {FOCUS_FLOOR} to {FOCUS_CAP}.
-            </>
-          ) : dreams.length > 0 ? (
-            <>
-              <strong className="font-medium">
-                {dreams.length} {dreams.length === 1 ? "dream" : "dreams"} waiting.
-              </strong>{" "}
-              Decide what earns your focus.
-            </>
-          ) : (
-            <span className="text-muted">
-              {macros.length} of {FOCUS_CAP} in focus
-            </span>
-          )}
+        <span>
+          Dream board
+          {dreams.length > 0 ? ` · ${dreams.length} waiting` : ""}
         </span>
-        <span className="shrink-0 text-xs text-muted">Triage →</span>
+        <span aria-hidden>→</span>
       </Link>
 
       {macros.length === 0 ? (
@@ -101,9 +72,14 @@ export default async function BoardPage() {
         </div>
       )}
 
-      <div className="mt-7">
-        <AddGoalForm tier="macro" label="Macro goal" categories={categories} withFloorCeiling />
-      </div>
+      {/* New goals start as dreams, so the add affordance points there rather
+          than quietly putting a tenth thing in focus. */}
+      <Link
+        href="/dreams"
+        className="mt-7 flex min-h-12 items-center justify-center rounded-2xl border border-dashed border-border text-sm text-muted"
+      >
+        + New goal — starts on the dream board
+      </Link>
 
       <p className="mt-4 px-1 text-xs text-muted text-pretty">
         Tap a goal to break it into micro goals and work it. No fake deadlines — you&apos;ve never

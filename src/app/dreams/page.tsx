@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { GoalChecks } from "@/components/goal-checks";
 import { EmptyState, Screen } from "@/components/screen";
-import { promoteToFocus, shelveGoal } from "@/lib/actions";
+import { createGoal, promoteToFocus, shelveGoal } from "@/lib/actions";
 import { FOCUS_CAP } from "@/lib/focus";
 import { getMacroStages, getPyramid } from "@/lib/queries";
 import { getTimezone } from "@/lib/dates";
@@ -18,19 +18,39 @@ export default async function TriagePage() {
   return (
     <Screen
       eyebrow="Choosing the right goals"
-      title="What gets your focus?"
+      title="Dream board"
       quote="If you try to halfway do all ten, you will be frustrated, and failure will win."
     >
+      {/* Capture first, evaluate later — so the input sits at the top and asks
+          for nothing but the idea. */}
+      <form action={createGoal} className="flex gap-2">
+        <input type="hidden" name="tier" value="macro" />
+        <input
+          name="title"
+          required
+          placeholder="What else do you want?"
+          aria-label="New dream"
+          className="min-h-12 min-w-0 flex-1 rounded-xl border border-border bg-surface-sunk px-4 outline-none focus:border-accent"
+        />
+        <button
+          type="submit"
+          className="min-h-12 shrink-0 rounded-xl bg-accent px-5 text-sm font-medium text-accent-fg"
+        >
+          Add
+        </button>
+      </form>
+      <p className="mt-2 text-xs text-muted text-pretty">
+        Dream freely and unreasonably. Nothing here is a commitment until you move it into focus.
+      </p>
+
       <div
-        className={`rounded-2xl border px-4 py-3 ${
+        className={`mt-6 rounded-2xl border px-4 py-3 ${
           overCap ? "border-tier-atomic/40 bg-tier-atomic/5" : "border-border bg-surface-sunk"
         }`}
       >
         <p className="text-sm text-pretty">
-          <strong className="font-medium">
-            {focus.length} in focus
-          </strong>{" "}
-          — the method calls for three to five.
+          <strong className="font-medium">{focus.length} in focus</strong> — the method calls for
+          three to five.
         </p>
         <p className="mt-1 text-xs text-muted text-pretty">
           {overCap
