@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 
 import { PALETTE_SLOTS } from "@/lib/category-color";
-import { FOCUS_CAP } from "@/lib/focus";
 import type { GoalDomain, GoalTier, IdeaPriority } from "@/lib/database.types";
 import { TIMEZONE_COOKIE, getTimezone, isValidTimezone, todayIn, weekStartOf } from "@/lib/dates";
 import { getAvoidanceBoard } from "@/lib/queries";
@@ -101,24 +100,11 @@ export async function updateGoal(formData: FormData) {
   refresh();
 }
 
-async function focusCount() {
-  const db = supabaseAdmin();
-  const { count, error } = await db
-    .from("goals")
-    .select("id", { count: "exact", head: true })
-    .eq("tier", "macro")
-    .eq("stage", "focus")
-    .eq("status", "active");
-  assertOk("Counting goals in focus", error);
-  return count ?? 0;
-}
-
+/**
+ * No cap. The counts on the dream board show what you are carrying and you
+ * make the call — a tool that refuses is a tool you route around.
+ */
 export async function promoteToFocus(id: string) {
-  if ((await focusCount()) >= FOCUS_CAP) {
-    throw new Error(
-      `You already have ${FOCUS_CAP} goals in focus. Shelve one before pulling another in.`,
-    );
-  }
   const db = supabaseAdmin();
   const { error } = await db.from("goals").update({ stage: "focus" }).eq("id", id);
   assertOk("Moving the goal into focus", error);

@@ -2,18 +2,28 @@ import Link from "next/link";
 
 import { GoalChecks } from "@/components/goal-checks";
 import { EmptyState, Screen } from "@/components/screen";
+import { HeroFigure, TileRow } from "@/components/capacity";
 import { createGoal, promoteToFocus, shelveGoal } from "@/lib/actions";
-import { FOCUS_CAP } from "@/lib/focus";
-import { getMacroStages, getPyramid } from "@/lib/queries";
+import { getMacroStages, getPyramid, getToday } from "@/lib/queries";
 import { getTimezone } from "@/lib/dates";
 import type { GoalRow } from "@/lib/database.types";
 
-export default async function TriagePage() {
+export default async function DreamBoardPage() {
   const timeZone = await getTimezone();
-  const [focus, { dreams, shelved }] = await Promise.all([getPyramid(timeZone), getMacroStages()]);
+  const [focus, { dreams, shelved }, { atomic }] = await Promise.all([
+    getPyramid(timeZone),
+    getMacroStages(),
+    getToday(timeZone),
+  ]);
 
-  const room = FOCUS_CAP - focus.length;
-  const overCap = focus.length > FOCUS_CAP;
+  const micros = focus.flatMap((macro) => macro.children);
+  const microOpen = micros.filter((micro) => micro.status === "active").length;
+  const miniOpen = micros
+    .flatMap((micro) => micro.children)
+    .filter((mini) => mini.status === "active").length;
+  const stalled = focus.filter((macro) => macro.stalledDays).length;
+  const waiting = focus.filter((macro) => macro.blocked_by).length;
+  const dailyLoad = atomic.length;
 
   return (
     <Screen
@@ -43,23 +53,27 @@ export default async function TriagePage() {
         Dream freely and unreasonably. Nothing here is a commitment until you move it into focus.
       </p>
 
-      <div
-        className={`mt-6 rounded-2xl border px-4 py-3 ${
-          overCap ? "border-tier-atomic/40 bg-tier-atomic/5" : "border-border bg-surface-sunk"
-        }`}
-      >
-        <p className="text-sm text-pretty">
-          <strong className="font-medium">{focus.length} in focus</strong> — the method calls for
-          three to five.
-        </p>
-        <p className="mt-1 text-xs text-muted text-pretty">
-          {overCap
-            ? `Shelve ${focus.length - FOCUS_CAP} to get back inside the cap. Shelved goals aren't dropped — they wait.`
-            : room > 0
-              ? `Room for ${room} more.`
-              : "Full. Finish or shelve one before pulling another in."}
-        </p>
-      </div>
+      <section className="mt-7">
+        <HeroFigure
+          value={focus.length}
+          label={focus.length === 1 ? "goal in focus" : "goals in focus"}
+          note={`${microOpen + miniOpen} open steps underneath, and ${dailyLoad} ${
+            dailyLoad === 1 ? "thing" : "things"
+          } to do every single day.`}
+        />
+        <div className="mt-4">
+          <TileRow
+            tiles={[
+              { label: "Micro goals open", value: microOpen },
+              { label: "Mini goals open", value: miniOpen },
+              { label: "Daily non-negotiables", value: dailyLoad },
+              { label: "Stalled 30+ days", value: stalled, alert: true },
+              { label: "Waiting on another", value: waiting },
+              { label: "Dreams unevaluated", value: dreams.length },
+            ]}
+          />
+        </div>
+      </section>
 
       <section className="mt-7">
         <h2 className="mb-2 text-[11px] uppercase tracking-[0.16em] text-muted">
@@ -110,7 +124,7 @@ export default async function TriagePage() {
         ) : (
           <ul className="space-y-3">
             {dreams.map((goal) => (
-              <Candidate key={goal.id} goal={goal} canPromote={room > 0} />
+              <Candidate key={goal.id} goal={goal} />
             ))}
           </ul>
         )}
@@ -123,29 +137,22 @@ export default async function TriagePage() {
           </h2>
           <ul className="space-y-3">
             {shelved.map((goal) => (
-              <Candidate key={goal.id} goal={goal} canPromote={room > 0} shelved />
+              <Candidate key={goal.id} goal={goal} shelved />
             ))}
           </ul>
         </section>
       ) : null}
 
       <p className="mt-8 px-1 text-sm text-muted text-pretty">
-        Don&apos;t organise your dreams from the start. Dream first, then decide which few earn
-        your attention now. Focus yields progress.
+        Don&apos;t organise your dreams from the start. Dream first, then decide which earn your
+        attention now. Focus yields progress — the numbers above are there so you can see what
+        you&apos;re already carrying before you add another.
       </p>
     </Screen>
   );
 }
 
-function Candidate({
-  goal,
-  canPromote,
-  shelved,
-}: {
-  goal: GoalRow;
-  canPromote: boolean;
-  shelved?: boolean;
-}) {
+function Candidate({ goal, shelved }: { goal: GoalRow; shelved?: boolean }) {
   return (
     <li className="rounded-2xl border border-border bg-surface px-4 py-3">
       <p className="leading-snug text-pretty">{goal.title}</p>
@@ -164,10 +171,9 @@ function Candidate({
         <form action={promoteToFocus.bind(null, goal.id)} className="flex-1">
           <button
             type="submit"
-            disabled={!canPromote}
-            className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg disabled:bg-surface-sunk disabled:text-muted"
+            className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg"
           >
-            {canPromote ? "Move into focus" : "Focus is full"}
+            Move into focus
           </button>
         </form>
         {shelved ? null : (
