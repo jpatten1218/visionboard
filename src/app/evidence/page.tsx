@@ -16,7 +16,9 @@ import { PULL_QUOTES, TIERS } from "@/lib/workbook";
 
 export default async function EvidencePage({ searchParams }: PageProps<"/evidence">) {
   const params = await searchParams;
-  const groupByCategory = params.by === "category";
+  // Category is the default view: which parts of your life are moving is the
+  // question this page answers on a bad day. Date is a lookup.
+  const groupByCategory = params.by !== "date";
 
   const timeZone = await getTimezone();
   const today = todayIn(timeZone);
@@ -125,8 +127,8 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
       </section>
 
       <nav className="mt-6 flex gap-2" aria-label="Group evidence by">
-        <ViewTab href="/evidence" label="By date" active={!groupByCategory} />
-        <ViewTab href="/evidence?by=category" label="By category" active={groupByCategory} />
+        <ViewTab href="/evidence" label="By category" active={groupByCategory} />
+        <ViewTab href="/evidence?by=date" label="By date" active={!groupByCategory} />
       </nav>
 
       <section className="mt-4 space-y-5">
@@ -137,21 +139,36 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
           />
         ) : (
           sections.map((section) => (
-            <div key={section}>
-              <h3 className="mb-2 flex items-baseline justify-between px-1 text-xs font-medium text-muted">
-                <span className="flex items-center gap-2">
-                  {groupByCategory ? (
-                    <span
-                      aria-hidden
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: categoryColor(slotByName.get(section)) }}
-                    />
-                  ) : null}
-                  <span>{groupByCategory ? section : formatDay(section)}</span>
+            // Folded by default: the count in the summary is the proof, and
+            // the pile above already carries the feeling. Open one when you
+            // actually want to read what's in it.
+            <details key={section} className="group">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-1 py-1.5 text-xs font-medium text-muted marker:hidden">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M9 5l7 7-7 7" />
+                </svg>
+                {groupByCategory ? (
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: categoryColor(slotByName.get(section)) }}
+                  />
+                ) : null}
+                <span className="min-w-0 flex-1 truncate">
+                  {groupByCategory ? section : formatDay(section)}
                 </span>
-                <span className="tabular-nums">{grouped.get(section)!.length}</span>
-              </h3>
-              <ul className="space-y-1.5">
+                <span className="shrink-0 tabular-nums">{grouped.get(section)!.length}</span>
+              </summary>
+              <ul className="mt-1.5 space-y-1.5">
                 {grouped.get(section)!.map((entry) => (
                   <li
                     key={entry.id}
@@ -188,7 +205,7 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
                   </li>
                 ))}
               </ul>
-            </div>
+            </details>
           ))
         )}
       </section>
