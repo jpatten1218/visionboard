@@ -1,14 +1,21 @@
+import Link from "next/link";
+
+import { CategorySelect, DateField, Field } from "@/components/goal-card";
 import { EmptyState, Screen } from "@/components/screen";
+import { addEvidenceEntry, deleteEvidenceEntry } from "@/lib/actions";
 import { formatDay, getTimezone, recentDays, todayIn } from "@/lib/dates";
-import { getEvidence } from "@/lib/queries";
+import { getCategories, getEvidence, type EvidenceEntry } from "@/lib/queries";
 import { PULL_QUOTES, TIERS } from "@/lib/workbook";
 
 const GRID_DAYS = 56;
 
-export default async function EvidencePage() {
+export default async function EvidencePage({ searchParams }: PageProps<"/evidence">) {
+  const params = await searchParams;
+  const groupByCategory = params.by === "category";
+
   const timeZone = await getTimezone();
   const today = todayIn(timeZone);
-  const entries = await getEvidence();
+  const [entries, categories] = await Promise.all([getEvidence(), getCategories()]);
 
   const countByDay = new Map<string, number>();
   for (const entry of entries) {
@@ -18,11 +25,21 @@ export default async function EvidencePage() {
   const days = recentDays(today, GRID_DAYS);
   const busiest = Math.max(1, ...days.map((day) => countByDay.get(day) ?? 0));
 
-  const byDay = new Map<string, typeof entries>();
+  // Category order follows the settings list, with uncategorised last.
+  const order = [...categories.map((category) => category.name), null];
+  const grouped = new Map<string, EvidenceEntry[]>();
   for (const entry of entries) {
-    byDay.set(entry.on, [...(byDay.get(entry.on) ?? []), entry]);
+    const key = groupByCategory ? entry.categoryName ?? "Uncategorised" : entry.on;
+    grouped.set(key, [...(grouped.get(key) ?? []), entry]);
   }
-  const dates = [...byDay.keys()].sort((a, b) => b.localeCompare(a));
+  const sections = [...grouped.keys()].sort((a, b) => {
+    if (!groupByCategory) return b.localeCompare(a);
+    const rank = (name: string) => {
+      const index = order.indexOf(name === "Uncategorised" ? null : name);
+      return index === -1 ? order.length : index;
+    };
+    return rank(a) - rank(b);
+  });
 
   return (
     <Screen
@@ -58,33 +75,77 @@ export default async function EvidencePage() {
         </div>
       </section>
 
-      <section className="mt-8 space-y-5">
-        {dates.length === 0 ? (
+      <section className="mt-6">
+        <details className="rounded-2xl border border-dashed border-border">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
+            + Add evidence
+          </summary>
+          <form action={addEvidenceEntry} className="space-y-2 border-t border-border px-4 py-3">
+            <Field name="title" label="What you did" required placeholder="Ran the Moab route" />
+            <Field name="note" label="Note" />
+            <div className="grid grid-cols-2 gap-2">
+              <CategorySelect categories={categories} />
+              <DateField name="happened_on" label="When" defaultValue={today} />
+            </div>
+            <p className="text-xs text-muted text-pretty">
+              For wins that were never on the board. Finished goals and logged habits land here on
+              their own.
+            </p>
+            <button
+              type="submit"
+              className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg"
+            >
+              Stack it
+            </button>
+          </form>
+        </details>
+      </section>
+
+      <nav className="mt-6 flex gap-2" aria-label="Group evidence by">
+        <ViewTab href="/evidence" label="By date" active={!groupByCategory} />
+        <ViewTab href="/evidence?by=category" label="By category" active={groupByCategory} />
+      </nav>
+
+      <section className="mt-4 space-y-5">
+        {sections.length === 0 ? (
           <EmptyState
             title="Nothing stacked yet"
-            body="Swipe a card right on the board, or log a habit on Today. Every one lands here."
+            body="Swipe a card right on the board, log a habit on Today, or add a win above. Every one lands here."
           />
         ) : (
-          dates.map((date) => (
-            <div key={date}>
-              <h3 className="mb-2 px-1 text-xs font-medium text-muted">{formatDay(date)}</h3>
+          sections.map((section) => (
+            <div key={section}>
+              <h3 className="mb-2 flex items-baseline justify-between px-1 text-xs font-medium text-muted">
+                <span>{groupByCategory ? section : formatDay(section)}</span>
+                <span className="tabular-nums">{grouped.get(section)!.length}</span>
+              </h3>
               <ul className="space-y-1.5">
-                {byDay.get(date)!.map((entry) => (
+                {grouped.get(section)!.map((entry) => (
                   <li
                     key={entry.id}
                     className="flex items-start gap-3 rounded-xl border border-border bg-surface px-4 py-2.5"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm leading-snug text-pretty">{entry.title}</span>
-                      {entry.note ? (
-                        <span className="mt-0.5 block text-xs text-muted text-pretty">
-                          {entry.note}
-                        </span>
-                      ) : null}
+                      <span className="mt-0.5 block text-xs text-muted text-pretty">
+                        {groupByCategory ? formatDay(entry.on) : entry.categoryName ?? ""}
+                        {entry.note ? `${groupByCategory || entry.categoryName ? " · " : ""}${entry.note}` : ""}
+                      </span>
                     </span>
                     <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted">
-                      {entry.kind === "finished" ? TIERS[entry.tier].label : "Logged"}
+                      {entry.kind === "finished" && entry.tier
+                        ? TIERS[entry.tier].label
+                        : entry.kind === "logged"
+                          ? "Logged"
+                          : "Added"}
                     </span>
+                    {entry.kind === "added" ? (
+                      <form action={deleteEvidenceEntry.bind(null, entry.id.replace("added:", ""))}>
+                        <button type="submit" aria-label="Remove evidence" className="text-muted">
+                          ×
+                        </button>
+                      </form>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -97,5 +158,19 @@ export default async function EvidencePage() {
         You want confidence? Stack evidence. You want change? Stack wins.
       </p>
     </Screen>
+  );
+}
+
+function ViewTab({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "true" : undefined}
+      className={`min-h-11 flex-1 rounded-xl border text-center text-sm leading-[2.75rem] ${
+        active ? "border-accent bg-accent text-accent-fg" : "border-border text-muted"
+      }`}
+    >
+      {label}
+    </Link>
   );
 }

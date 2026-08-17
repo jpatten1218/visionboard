@@ -145,6 +145,30 @@ export async function toggleHabitDay(goalId: string, day: string, hitCeiling = f
   refresh();
 }
 
+/** A win that was never on the board. Part 05's pile takes those too. */
+export async function addEvidenceEntry(formData: FormData) {
+  const title = text(formData.get("title"));
+  if (!title) return;
+
+  const timeZone = await getTimezone();
+  const db = supabaseAdmin();
+  const { error } = await db.from("evidence_entries").insert({
+    title,
+    note: text(formData.get("note")),
+    category_id: text(formData.get("category_id")),
+    happened_on: text(formData.get("happened_on")) ?? todayIn(timeZone),
+  });
+  assertOk("Adding the evidence", error);
+  refresh();
+}
+
+export async function deleteEvidenceEntry(id: string) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("evidence_entries").delete().eq("id", id);
+  assertOk("Removing the evidence", error);
+  refresh();
+}
+
 export async function addCategory(formData: FormData) {
   const name = text(formData.get("name"));
   if (!name) return;

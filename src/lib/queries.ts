@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import type {
   AvoidanceItemRow,
   CategoryRow,
+  EvidenceEntryRow,
   GoalCompletionRow,
   GoalRow,
   JournalEntryRow,
@@ -203,16 +204,20 @@ function streakEndingAt(done: Set<string>, today: string): number {
 export type EvidenceEntry = {
   id: string;
   title: string;
-  tier: GoalRow["tier"];
+  tier: GoalRow["tier"] | null;
   on: string;
   note: string | null;
-  kind: "finished" | "logged";
+  categoryName: string | null;
+  kind: "finished" | "logged" | "added";
 };
 
-/** Part 05 — the proof pile. Finished goals and every logged habit day. */
+/**
+ * Part 05 — the proof pile. Three sources: goals you finished, habit days you
+ * logged, and wins you added by hand that were never on the board.
+ */
 export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
   const db = supabaseAdmin();
-  const [finishedResult, loggedResult] = await Promise.all([
+  const [finishedResult, loggedResult, addedResult, allGoalsResult, categories] = await Promise.all([
     db
       .from("goals")
       .select("*")
@@ -224,9 +229,37 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
       .select("*, goals(title, tier)")
       .order("completed_on", { ascending: false })
       .limit(limit),
+    db
+      .from("evidence_entries")
+      .select("*")
+      .order("happened_on", { ascending: false })
+      .limit(limit),
+    // Just enough of every goal to walk a micro or mini up to the macro that
+    // carries the category.
+    db.from("goals").select("id, parent_id, category_id"),
+    getCategories(),
   ]);
   fail("Loading finished goals", finishedResult.error);
   fail("Loading logged days", loggedResult.error);
+  fail("Loading added evidence", addedResult.error);
+  fail("Loading the goal graph", allGoalsResult.error);
+
+  const categoryName = new Map(categories.map((category) => [category.id, category.name]));
+  type GraphRow = { id: string; parent_id: string | null; category_id: string | null };
+  const graph = new Map(
+    ((allGoalsResult.data ?? []) as GraphRow[]).map((row) => [row.id, row]),
+  );
+
+  /** A goal's own category, or the nearest ancestor's. */
+  function categoryOfGoal(goalId: string): string | null {
+    let cursor = graph.get(goalId);
+    // Bounded by the pyramid's depth; the guard is against a cyclic parent.
+    for (let depth = 0; cursor && depth < 8; depth++) {
+      if (cursor.category_id) return categoryName.get(cursor.category_id) ?? null;
+      cursor = cursor.parent_id ? graph.get(cursor.parent_id) : undefined;
+    }
+    return null;
+  }
 
   const finished: EvidenceEntry[] = ((finishedResult.data ?? []) as GoalRow[]).map((goal) => ({
     id: `goal:${goal.id}`,
@@ -234,6 +267,7 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
     tier: goal.tier,
     on: (goal.completed_at ?? goal.updated_at).slice(0, 10),
     note: goal.detail,
+    categoryName: categoryOfGoal(goal.id),
     kind: "finished",
   }));
 
@@ -250,10 +284,23 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
       tier: row.goals!.tier,
       on: row.completed_on,
       note: row.note,
+      categoryName: categoryOfGoal(row.goal_id),
       kind: "logged",
     }));
 
-  return [...finished, ...logged].sort((a, b) => b.on.localeCompare(a.on)).slice(0, limit);
+  const added: EvidenceEntry[] = ((addedResult.data ?? []) as EvidenceEntryRow[]).map((entry) => ({
+    id: `added:${entry.id}`,
+    title: entry.title,
+    tier: null,
+    on: entry.happened_on,
+    note: entry.note,
+    categoryName: entry.category_id ? categoryName.get(entry.category_id) ?? null : null,
+    kind: "added",
+  }));
+
+  return [...finished, ...logged, ...added]
+    .sort((a, b) => b.on.localeCompare(a.on))
+    .slice(0, limit);
 }
 
 export type AvoidanceBoard = {

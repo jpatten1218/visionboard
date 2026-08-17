@@ -40,6 +40,16 @@ export type GoalRow = {
   updated_at: string;
 };
 
+export type EvidenceEntryRow = {
+  id: string;
+  owner_id: string;
+  title: string;
+  note: string | null;
+  category_id: string | null;
+  happened_on: string;
+  created_at: string;
+};
+
 export type GoalCompletionRow = {
   id: string;
   owner_id: string;
@@ -103,6 +113,7 @@ export type Database = {
     Tables: {
       goals: TableShape<GoalRow, "tier" | "title">;
       categories: TableShape<CategoryRow, "name">;
+      evidence_entries: TableShape<EvidenceEntryRow, "title">;
       goal_completions: TableShape<GoalCompletionRow, "goal_id">;
       avoidance_items: TableShape<AvoidanceItemRow, "idea">;
       weekly_reviews: TableShape<WeeklyReviewRow, "week_start">;

@@ -1,14 +1,22 @@
 import { AddGoalForm } from "@/components/add-goal-form";
-import { GoalCard } from "@/components/goal-card";
+import {
+  CategorySelect,
+  Field,
+  FloorCeilingFields,
+  GoalCard,
+} from "@/components/goal-card";
 import { EmptyState, Screen } from "@/components/screen";
-import { toggleHabitDay } from "@/lib/actions";
+import { deleteGoal, toggleHabitDay, updateGoal } from "@/lib/actions";
 import { formatDay, getTimezone } from "@/lib/dates";
-import { getToday } from "@/lib/queries";
+import { getCategories, getToday } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function TodayPage() {
   const timeZone = await getTimezone();
-  const { today, atomic, minis } = await getToday(timeZone);
+  const [{ today, atomic, minis }, categories] = await Promise.all([
+    getToday(timeZone),
+    getCategories(),
+  ]);
 
   return (
     <Screen eyebrow={formatDay(today)} title="Your floor is what saves you." quote={PULL_QUOTES.floor}>
@@ -63,12 +71,49 @@ export default async function TodayPage() {
                     ) : null}
                   </button>
                 </form>
+
+                <details className="px-2">
+                  <summary className="inline-flex min-h-8 cursor-pointer list-none items-center text-xs text-muted marker:hidden">
+                    Edit
+                  </summary>
+                  <form action={updateGoal} className="mt-2 space-y-2 pb-2">
+                    <input type="hidden" name="id" value={goal.id} />
+                    <Field name="title" label="Habit" defaultValue={goal.title} required />
+                    <Field name="detail" label="Detail" defaultValue={goal.detail ?? ""} />
+                    <CategorySelect
+                      categories={categories}
+                      defaultValue={goal.category_id ?? ""}
+                    />
+                    <FloorCeilingFields floor={goal.floor} ceiling={goal.ceiling} />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="min-h-11 flex-1 rounded-xl bg-accent text-sm font-medium text-accent-fg"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="submit"
+                        formNoValidate
+                        formAction={deleteGoal.bind(null, goal.id)}
+                        className="min-h-11 rounded-xl border border-border px-4 text-sm text-muted"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </form>
+                </details>
               </li>
             ))}
           </ul>
         )}
 
-        <AddGoalForm tier="atomic" label="Atomic habit" withFloorCeiling />
+        <AddGoalForm
+          tier="atomic"
+          label="Atomic habit"
+          categories={categories}
+          withFloorCeiling
+        />
       </section>
 
       <section className="mt-8 space-y-3">
