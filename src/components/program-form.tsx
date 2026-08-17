@@ -78,19 +78,24 @@ export function ProgramForm({
         placeholder="Tuesday 7pm call, two retreats a year"
       />
 
-      <label className="block">
-        <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted">
-          Which goal does it serve?
-        </span>
-        <select name="goal_id" defaultValue={program?.goal_id ?? ""} className={SELECT_CLASS}>
-          <option value="">Nothing on the board yet</option>
-          {goals.map((goal) => (
-            <option key={goal.id} value={goal.id}>
-              {goal.title}
-            </option>
-          ))}
-        </select>
-      </label>
+      {/* On an existing program the goal is attached by its own control,
+          which saves on change; including it here too would let a stale
+          select overwrite it. New programs still pick one up front. */}
+      {program ? null : (
+        <label className="block">
+          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted">
+            Which goal does it serve?
+          </span>
+          <select name="goal_id" defaultValue="" className={SELECT_CLASS}>
+            <option value="">Attach one later</option>
+            {goals.map((goal) => (
+              <option key={goal.id} value={goal.id}>
+                {goal.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <DateField name="started_on" label="From" defaultValue={program?.started_on ?? ""} />

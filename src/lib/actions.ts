@@ -425,6 +425,21 @@ export async function updateProgram(id: string, formData: FormData) {
   refresh();
 }
 
+/**
+ * Attaching a program to a goal saves on its own rather than riding along
+ * with the whole edit form. An uncontrolled select loses its selection to any
+ * re-render, which made the pairing look like it simply refused to save.
+ */
+export async function setProgramGoal(id: string, goalId: string) {
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("programs")
+    .update({ goal_id: goalId === "" ? null : goalId })
+    .eq("id", id);
+  assertOk("Attaching the program to a goal", error);
+  refresh();
+}
+
 export async function deleteProgram(id: string) {
   const db = supabaseAdmin();
   const { error } = await db.from("programs").delete().eq("id", id);

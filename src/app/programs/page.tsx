@@ -13,6 +13,7 @@ import {
   formatMoney,
 } from "@/lib/programs";
 import { ProgramForm } from "@/components/program-form";
+import { ProgramGoalSelect } from "@/components/program-goal-select";
 
 export default async function ProgramsPage() {
   const timeZone = await getTimezone();
@@ -170,15 +171,15 @@ function ProgramCard({
           </p>
         ) : null}
 
-        {program.goalTitle ? (
-          <p className="mt-1.5 text-xs text-muted">
-            Serves: <span className="text-foreground">{program.goalTitle}</span>
-          </p>
-        ) : (
+        {!program.goalTitle ? (
           <p className="mt-1.5 text-xs text-tier-atomic text-pretty">
             Not attached to any goal — what is it for?
           </p>
-        )}
+        ) : null}
+
+        <div className="mt-2.5">
+          <ProgramGoalSelect programId={program.id} goalId={program.goal_id} goals={goals} />
+        </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
           <form action={logProgramEngagement.bind(null, program.id, today)} className="flex-1">
