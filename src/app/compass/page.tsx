@@ -1,34 +1,26 @@
 import { AddGoalForm } from "@/components/add-goal-form";
-import { Field } from "@/components/goal-card";
-import { JournalPrompt } from "@/components/journal-prompt";
-import { Screen } from "@/components/screen";
+import { CategorySelect, Field, FloorCeilingFields } from "@/components/goal-card";
+import { EmptyState, Screen } from "@/components/screen";
 import {
-  addBook,
   addCategory,
-  deleteBook,
   deleteCategory,
+  deleteGoal,
   renameCategory,
   saveWeeklyReview,
-  toggleBookFinished,
+  updateGoal,
 } from "@/lib/actions";
+import { categoryColor } from "@/lib/category-color";
 import { formatDay, getTimezone } from "@/lib/dates";
-import {
-  getCategories,
-  getJournal,
-  getReadingList,
-  getUniversalGoals,
-  getWeek,
-} from "@/lib/queries";
-import { DIRECTION_PROMPTS, INQUIRY_PROMPTS, PULL_QUOTES } from "@/lib/workbook";
+import { getCategories, getToday, getUniversalGoals, getWeek } from "@/lib/queries";
+import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function CompassPage() {
   const timeZone = await getTimezone();
-  const [universal, week, journal, books, categories] = await Promise.all([
+  const [universal, week, categories, { atomic }] = await Promise.all([
     getUniversalGoals(),
     getWeek(timeZone),
-    getJournal(),
-    getReadingList(),
     getCategories(),
+    getToday(timeZone),
   ]);
 
   return (
@@ -57,12 +49,102 @@ export default async function CompassPage() {
       </section>
 
       <section className="mt-9">
+        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-tier-atomic">
+          Non-negotiables
+        </h2>
+        <p className="mb-3 px-1 text-xs text-muted text-pretty">
+          Your daily floor. These appear at the top of Today every morning — two minutes or less,
+          the things you do even on the days you have nothing.
+        </p>
+
+        {atomic.length === 0 ? (
+          <EmptyState
+            title="No non-negotiables yet"
+            body="A gallon of water, a ten-minute walk, five minutes of breathwork. Small enough that a bad day can't stop you."
+          />
+        ) : (
+          <ul className="space-y-2">
+            {atomic.map((habit) => (
+              <li key={habit.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <p className="min-w-0 flex-1 leading-snug text-pretty">{habit.title}</p>
+                  {habit.streak > 0 ? (
+                    <span className="shrink-0 text-xs tabular-nums text-muted">
+                      {habit.streak}d
+                    </span>
+                  ) : null}
+                </div>
+
+                {habit.categoryName || habit.floor || habit.ceiling ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                    {habit.categoryName ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          aria-hidden
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: categoryColor(habit.categorySlot) }}
+                        />
+                        {habit.categoryName}
+                      </span>
+                    ) : null}
+                    {habit.floor ? <span>Floor: {habit.floor}</span> : null}
+                    {habit.ceiling ? <span>Ceiling: {habit.ceiling}</span> : null}
+                  </div>
+                ) : null}
+
+                <details className="mt-2">
+                  <summary className="inline-flex min-h-8 cursor-pointer list-none items-center text-xs text-muted marker:hidden">
+                    Edit
+                  </summary>
+                  <form action={updateGoal} className="mt-2 space-y-2">
+                    <input type="hidden" name="id" value={habit.id} />
+                    <Field name="title" label="Habit" defaultValue={habit.title} required />
+                    <Field name="detail" label="Detail" defaultValue={habit.detail ?? ""} />
+                    <CategorySelect
+                      categories={categories}
+                      defaultValue={habit.category_id ?? ""}
+                    />
+                    <FloorCeilingFields floor={habit.floor} ceiling={habit.ceiling} />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="min-h-11 flex-1 rounded-xl bg-accent text-sm font-medium text-accent-fg"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="submit"
+                        formNoValidate
+                        formAction={deleteGoal.bind(null, habit.id)}
+                        className="min-h-11 rounded-xl border border-border px-4 text-sm text-muted"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </form>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mt-3">
+          <AddGoalForm
+            tier="atomic"
+            label="Non-negotiable"
+            categories={categories}
+            withFloorCeiling
+          />
+        </div>
+      </section>
+
+      <section className="mt-9">
         <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
           Part 05 — this week
         </h2>
         <div className="rounded-2xl border border-border bg-surface px-4 py-4">
           <div className="flex items-baseline gap-2">
-            <span className="font-serif text-4xl tabular-nums">{week.consistencyPct}%</span>
+            <span className="text-4xl font-semibold">{week.consistencyPct}%</span>
             <span className="text-sm text-muted">consistent since {formatDay(week.weekStart)}</span>
           </div>
 
@@ -87,7 +169,7 @@ export default async function CompassPage() {
             </ul>
           ) : (
             <p className="mt-2 text-sm text-muted text-pretty">
-              Add atomic habits on Today and this fills in.
+              Tick your non-negotiables on Today and this fills in.
             </p>
           )}
 
@@ -114,35 +196,17 @@ export default async function CompassPage() {
         </div>
       </section>
 
-      <section className="mt-9 space-y-2">
-        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
-          Journal prompts
-        </h2>
-        {DIRECTION_PROMPTS.map((prompt) => (
-          <JournalPrompt key={prompt.key} prompt={prompt} initial={journal.get(prompt.key) ?? ""} />
-        ))}
-      </section>
-
-      <section className="mt-9 space-y-2">
-        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
-          Self-inquiry
-        </h2>
-        {INQUIRY_PROMPTS.map((prompt) => (
-          <JournalPrompt key={prompt.key} prompt={prompt} initial={journal.get(prompt.key) ?? ""} />
-        ))}
-        <p className="px-1 text-xs text-muted text-pretty">
-          Get honest. Build strategies around your known hazards.
-        </p>
-      </section>
-
       <section className="mt-9">
-        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
-          Categories
-        </h2>
+        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">Categories</h2>
         <ul className="space-y-2">
           {categories.map((category) => (
             <li key={category.id} className="rounded-2xl border border-border bg-surface px-3 py-2">
-              <form action={renameCategory.bind(null, category.id)} className="flex gap-2">
+              <form action={renameCategory.bind(null, category.id)} className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: categoryColor(category.color_slot) }}
+                />
                 <input
                   name="name"
                   defaultValue={category.name}
@@ -166,8 +230,8 @@ export default async function CompassPage() {
           ))}
         </ul>
         <p className="mt-2 px-1 text-xs text-muted text-pretty">
-          Removing a category leaves its macro goals on the board — they just lose the label. The
-          board groups itself by this order.
+          Removing a category leaves its goals on the board — they just lose the label. The board
+          groups itself by this order.
         </p>
 
         <details className="mt-3 rounded-2xl border border-dashed border-border">
@@ -176,65 +240,6 @@ export default async function CompassPage() {
           </summary>
           <form action={addCategory} className="space-y-2 border-t border-border px-4 py-3">
             <Field name="name" label="Name" required placeholder="Craft" />
-            <button
-              type="submit"
-              className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg"
-            >
-              Add
-            </button>
-          </form>
-        </details>
-      </section>
-
-      <section className="mt-9">
-        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
-          Books for alignment
-        </h2>
-        <ul className="space-y-2">
-          {books.map((book) => (
-            <li
-              key={book.id}
-              className="flex items-start gap-3 rounded-2xl border border-border bg-surface px-4 py-3"
-            >
-              <form action={toggleBookFinished.bind(null, book.id, book.finished_at === null)}>
-                <button
-                  type="submit"
-                  aria-label={book.finished_at ? "Mark unread" : "Mark finished"}
-                  className={`mt-0.5 grid h-6 w-6 place-items-center rounded-full border-2 ${
-                    book.finished_at ? "border-accent bg-accent text-accent-fg" : "border-border"
-                  }`}
-                >
-                  {book.finished_at ? (
-                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M5 12l4 4L19 7" />
-                    </svg>
-                  ) : null}
-                </button>
-              </form>
-              <span className="min-w-0 flex-1">
-                <span className="block leading-snug text-pretty">{book.title}</span>
-                {book.why_it_matters ? (
-                  <span className="mt-0.5 block text-sm text-muted text-pretty">
-                    {book.why_it_matters}
-                  </span>
-                ) : null}
-              </span>
-              <form action={deleteBook.bind(null, book.id)}>
-                <button type="submit" aria-label="Remove book" className="px-1 text-muted">
-                  ×
-                </button>
-              </form>
-            </li>
-          ))}
-        </ul>
-
-        <details className="mt-3 rounded-2xl border border-dashed border-border">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
-            + Add a book
-          </summary>
-          <form action={addBook} className="space-y-2 border-t border-border px-4 py-3">
-            <Field name="title" label="Title" required />
-            <Field name="why_it_matters" label="Why it matters" />
             <button
               type="submit"
               className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg"
