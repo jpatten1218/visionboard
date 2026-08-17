@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 
 import { PALETTE_SLOTS } from "@/lib/category-color";
+import { FOCUS_CAP } from "@/lib/focus";
 import type { GoalDomain, GoalTier, IdeaPriority } from "@/lib/database.types";
 import { TIMEZONE_COOKIE, getTimezone, isValidTimezone, todayIn, weekStartOf } from "@/lib/dates";
 import { getAvoidanceBoard } from "@/lib/queries";
@@ -65,6 +66,9 @@ export async function createGoal(formData: FormData) {
     parent_id: parentId,
     category_id: text(formData.get("category_id")),
     target_on: targetOn,
+    // A new macro goal is a dream until it has been evaluated. Capturing must
+    // be frictionless; committing must not be.
+    stage: tier === "macro" ? "dream" : "focus",
     detail: text(formData.get("detail")),
     floor: text(formData.get("floor")),
     ceiling: text(formData.get("ceiling")),
@@ -94,6 +98,117 @@ export async function updateGoal(formData: FormData) {
     })
     .eq("id", id);
   assertOk("Updating the goal", error);
+  refresh();
+}
+
+async function focusCount() {
+  const db = supabaseAdmin();
+  const { count, error } = await db
+    .from("goals")
+    .select("id", { count: "exact", head: true })
+    .eq("tier", "macro")
+    .eq("stage", "focus")
+    .eq("status", "active");
+  assertOk("Counting goals in focus", error);
+  return count ?? 0;
+}
+
+export async function promoteToFocus(id: string) {
+  if ((await focusCount()) >= FOCUS_CAP) {
+    throw new Error(
+      `You already have ${FOCUS_CAP} goals in focus. Shelve one before pulling another in.`,
+    );
+  }
+  const db = supabaseAdmin();
+  const { error } = await db.from("goals").update({ stage: "focus" }).eq("id", id);
+  assertOk("Moving the goal into focus", error);
+  refresh();
+}
+
+export async function shelveGoal(id: string) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("goals").update({ stage: "shelved" }).eq("id", id);
+  assertOk("Shelving the goal", error);
+  refresh();
+}
+
+/** The alignment, energy and impact checks from Section 05. */
+export async function saveGoalChecks(id: string, formData: FormData) {
+  const rating = (value: FormDataEntryValue | null) => {
+    const raw = typeof value === "string" ? value : "";
+    return raw === "low" || raw === "mixed" || raw === "high" ? raw : null;
+  };
+
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("goals")
+    .update({
+      check_alignment: rating(formData.get("check_alignment")),
+      check_energy: rating(formData.get("check_energy")),
+      check_impact: rating(formData.get("check_impact")),
+    })
+    .eq("id", id);
+  assertOk("Saving the checks", error);
+  refresh();
+}
+
+/**
+ * Section 07. Recommitting restarts the stall clock honestly — it records the
+ * decision rather than faking activity that never happened.
+ */
+export async function recommitGoal(id: string) {
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("goals")
+    .update({ recommitted_at: new Date().toISOString() })
+    .eq("id", id);
+  assertOk("Recommitting to the goal", error);
+  refresh();
+}
+
+/** Dropping on purpose is a decision worth recording, not a deletion. */
+export async function dropGoal(id: string, formData: FormData) {
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("goals")
+    .update({
+      status: "archived",
+      stage: "shelved",
+      dropped_at: new Date().toISOString(),
+      dropped_reason: text(formData.get("dropped_reason")),
+    })
+    .eq("id", id);
+  assertOk("Dropping the goal", error);
+  refresh();
+}
+
+/**
+ * Section 05's ordering question. Walks the chain before saving so two goals
+ * cannot end up waiting on each other.
+ */
+export async function setBlockedBy(id: string, formData: FormData) {
+  const blockedBy = text(formData.get("blocked_by"));
+  const db = supabaseAdmin();
+
+  if (blockedBy) {
+    const { data: rows, error: readError } = await db
+      .from("goals")
+      .select("id, blocked_by")
+      .eq("tier", "macro");
+    assertOk("Checking the dependency chain", readError);
+
+    const parent = new Map((rows ?? []).map((row) => [row.id, row.blocked_by]));
+    let cursor: string | null = blockedBy;
+    for (let depth = 0; cursor && depth < 20; depth++) {
+      if (cursor === id) {
+        throw new Error("That would leave the two goals waiting on each other.");
+      }
+      cursor = parent.get(cursor) ?? null;
+    }
+  }
+
+  const { error } = await db.from("goals").update({ blocked_by: blockedBy }).eq("id", id);
+  assertOk("Setting what this waits on", error);
   refresh();
 }
 

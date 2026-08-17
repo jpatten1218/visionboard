@@ -5,21 +5,32 @@ import { notFound } from "next/navigation";
 import { AddGoalForm } from "@/components/add-goal-form";
 import { GoalCard } from "@/components/goal-card";
 import { Screen } from "@/components/screen";
+import { ChecksSummary, GoalChecks } from "@/components/goal-checks";
 import {
   completeGoal,
   deleteGoal,
+  dropGoal,
+  recommitGoal,
   removeGoalImage,
   reopenGoal,
+  setBlockedBy,
+  shelveGoal,
   uploadGoalImage,
 } from "@/lib/actions";
 import { countdown, formatDay, getTimezone, todayIn } from "@/lib/dates";
-import { getCategories, getMacroGoal, type GoalNode } from "@/lib/queries";
+import { getCategories, getMacroGoal, getMacroTitles, type GoalNode } from "@/lib/queries";
 
 export default async function GoalPage({ params }: PageProps<"/goal/[id]">) {
   const { id } = await params;
   const timeZone = await getTimezone();
-  const [macro, categories] = await Promise.all([getMacroGoal(id, timeZone), getCategories()]);
+  const [macro, categories, macroTitles] = await Promise.all([
+    getMacroGoal(id, timeZone),
+    getCategories(),
+    getMacroTitles(),
+  ]);
   if (!macro) notFound();
+
+  const others = macroTitles.filter((other) => other.id !== id);
 
   const open = macro.children.filter((micro) => micro.status === "active");
   const done = macro.children.filter((micro) => micro.status === "done");
@@ -59,15 +70,56 @@ export default async function GoalPage({ params }: PageProps<"/goal/[id]">) {
         </p>
       ) : null}
 
-      {macro.stalledDays ? (
-        <p className="mb-3 rounded-2xl border border-tier-atomic/40 bg-tier-atomic/5 px-4 py-3 text-sm text-pretty">
-          <strong className="font-medium">Stalled {macro.stalledDays} days.</strong> Nothing under
-          this has been finished since {formatDay(macro.lastMovedOn!)}. Is this still true, or is it
-          avoidance? Either answer is fine — but pick one.
+      {macro.stalledDays ? <StalledPrompt macro={macro} /> : null}
+
+      <GoalCard goal={macro} category={macro.category} categories={categories} />
+
+      {macro.blockedByTitle ? (
+        <p className="mt-3 rounded-2xl border border-border bg-surface-sunk px-4 py-3 text-sm text-pretty">
+          <strong className="font-medium">Waiting on:</strong> {macro.blockedByTitle}. Finish that
+          first — pursuing this before it is ready is how the effort gets wasted.
         </p>
       ) : null}
 
-      <GoalCard goal={macro} category={macro.category} categories={categories} />
+      <details className="mt-3 rounded-2xl border border-dashed border-border">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
+          The three checks
+          {macro.check_alignment || macro.check_energy || macro.check_impact ? "" : " — unanswered"}
+        </summary>
+        <div className="space-y-3 border-t border-border px-4 py-3">
+          <ChecksSummary goal={macro} />
+          <GoalChecks goal={macro} />
+        </div>
+      </details>
+
+      <details className="mt-2 rounded-2xl border border-dashed border-border">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
+          Does something have to happen first?
+        </summary>
+        <form
+          action={setBlockedBy.bind(null, macro.id)}
+          className="space-y-2 border-t border-border px-4 py-3"
+        >
+          <select
+            name="blocked_by"
+            defaultValue={macro.blocked_by ?? ""}
+            className="min-h-11 w-full rounded-xl border border-border bg-surface-sunk px-3 outline-none focus:border-accent"
+          >
+            <option value="">Nothing — this can run now</option>
+            {others.map((other) => (
+              <option key={other.id} value={other.id}>
+                {other.title}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="min-h-11 w-full rounded-xl border border-border text-sm text-muted"
+          >
+            Save
+          </button>
+        </form>
+      </details>
 
       <p className="mt-4 px-1 text-xs text-muted">
         {done.length} of {macro.children.length} micro goals finished
@@ -166,6 +218,89 @@ function ImageControls({ goalId, hasImage }: { goalId: string; hasImage: boolean
         </form>
       ) : null}
     </details>
+  );
+}
+
+/**
+ * Section 07, made into a decision rather than a nag. The three drop-signs are
+ * Matt's, and so is the distinction that matters most: changing a goal because
+ * you have realised something is not the same as changing it because you
+ * couldn't hold the line.
+ */
+function StalledPrompt({ macro }: { macro: GoalNode }) {
+  return (
+    <section className="mb-3 rounded-2xl border border-tier-atomic/40 bg-tier-atomic/5 px-4 py-3">
+      <p className="text-sm text-pretty">
+        <strong className="font-medium">Stalled {macro.stalledDays} days.</strong> Nothing under
+        this has been finished since {formatDay(macro.lastMovedOn!)}.
+      </p>
+      <p className="mt-2 text-xs text-muted text-pretty">
+        Drop it if it no longer aligns with your values, drains you without a meaningful return, or
+        feels forced instead of inspiring. But be honest about which this is: changing a goal out of
+        awareness is not the same as changing it because you couldn&apos;t hold the line.
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <form action={recommitGoal.bind(null, macro.id)} className="flex-1">
+          <button
+            type="submit"
+            className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg"
+          >
+            Still on — recommit
+          </button>
+        </form>
+        <form action={shelveGoal.bind(null, macro.id)}>
+          <button
+            type="submit"
+            className="min-h-11 rounded-xl border border-border px-4 text-sm text-muted"
+          >
+            Shelve
+          </button>
+        </form>
+      </div>
+
+      <details className="mt-2">
+        <summary className="inline-flex min-h-9 cursor-pointer list-none items-center text-xs text-muted marker:hidden">
+          Pivot or drop it
+        </summary>
+        <div className="mt-2 space-y-3">
+          <p className="text-xs text-muted text-pretty">
+            Adjust your approach before you abandon the goal — often what is broken is the plan, not
+            the destination. Edit it above, or record the drop here.
+          </p>
+          <form action={dropGoal.bind(null, macro.id)} className="space-y-2">
+            <label className="block">
+              <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted">
+                Why are you dropping it?
+              </span>
+              <select
+                name="dropped_reason"
+                className="min-h-11 w-full rounded-xl border border-border bg-surface-sunk px-3 outline-none focus:border-accent"
+              >
+                <option value="No longer aligns with my values or bigger vision">
+                  No longer aligns with my values
+                </option>
+                <option value="Drains energy without a meaningful return">
+                  Drains energy without meaningful return
+                </option>
+                <option value="Feels forced instead of inspiring">
+                  Feels forced instead of inspiring
+                </option>
+                <option value="Already accomplished what it was really for">
+                  Already got what it was really for
+                </option>
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="min-h-11 w-full rounded-xl border border-tier-atomic/40 text-sm text-tier-atomic"
+            >
+              Drop this goal
+            </button>
+          </form>
+        </div>
+      </details>
+    </section>
   );
 }
 

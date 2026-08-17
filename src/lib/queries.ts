@@ -29,6 +29,14 @@ export type GoalNode = GoalRow & {
   lastMovedOn?: string;
   /** Days since that, once past the threshold. Null means it is moving. */
   stalledDays?: number | null;
+  /** Title of the goal this one waits on, when it waits on one. */
+  blockedByTitle?: string | null;
+};
+
+export type MacroStages = {
+  focus: GoalNode[];
+  dreams: GoalRow[];
+  shelved: GoalRow[];
 };
 
 /** A macro goal with nothing finished under it for this long has stalled. */
@@ -100,8 +108,14 @@ export async function getPyramid(timeZone: string): Promise<GoalNode[]> {
     // A finished macro goal leaves the board for the evidence pile — the
     // workbook's board empties as you become the person who cleared it.
     // Finished micros and minis stay visible under their parent as progress.
-    else if (node.tier === "macro" && node.status === "active") roots.push(node);
+    // Only goals in focus reach the board. Dreams and shelved goals live on
+    // the triage and parked screens until they earn a place.
+    else if (node.tier === "macro" && node.status === "active" && node.stage === "focus") {
+      roots.push(node);
+    }
   }
+
+  const titleById = new Map(rows.map((row) => [row.id, row.title]));
 
   const today = todayIn(timeZone);
   const signed = await signImages(roots.map((macro) => macro.image_path ?? ""));
@@ -116,12 +130,18 @@ export async function getPyramid(timeZone: string): Promise<GoalNode[]> {
       .filter((value): value is string => Boolean(value))
       .map((value) => localDateOf(value, timeZone));
 
-    const lastMovedOn = finishes.sort().at(-1) ?? localDateOf(macro.created_at, timeZone);
+    // Recommitting counts as movement — it is a decision, deliberately made,
+    // and restarting the clock is the point of making it.
+    const marks = [...finishes, localDateOf(macro.created_at, timeZone)];
+    if (macro.recommitted_at) marks.push(localDateOf(macro.recommitted_at, timeZone));
+
+    const lastMovedOn = marks.sort().at(-1)!;
     const idleDays = daysBetween(lastMovedOn, today);
 
     macro.lastMovedOn = lastMovedOn;
     macro.stalledDays = idleDays > STALLED_AFTER_DAYS ? idleDays : null;
     macro.imageUrl = macro.image_path ? signed.get(macro.image_path) ?? null : null;
+    macro.blockedByTitle = macro.blocked_by ? titleById.get(macro.blocked_by) ?? null : null;
   }
 
   // Grouped by category so swiping across the board moves through one area of
@@ -132,6 +152,38 @@ export async function getPyramid(timeZone: string): Promise<GoalNode[]> {
     const bRank = b.category_id ? rank.get(b.category_id) ?? Infinity : Infinity;
     return aRank - bRank || a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at);
   });
+}
+
+/** Macro goals that aren't on the board: waiting to be triaged, or shelved. */
+export async function getMacroStages(): Promise<Omit<MacroStages, "focus">> {
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("goals")
+    .select("*")
+    .eq("tier", "macro")
+    .eq("status", "active")
+    .in("stage", ["dream", "shelved"])
+    .order("created_at", { ascending: false });
+  fail("Loading dreams and shelved goals", error);
+
+  const rows = (data ?? []) as GoalRow[];
+  return {
+    dreams: rows.filter((row) => row.stage === "dream"),
+    shelved: rows.filter((row) => row.stage === "shelved"),
+  };
+}
+
+/** Every macro goal that could be named as a prerequisite for another. */
+export async function getMacroTitles(): Promise<Pick<GoalRow, "id" | "title" | "stage">[]> {
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("goals")
+    .select("id, title, stage")
+    .eq("tier", "macro")
+    .eq("status", "active")
+    .order("title");
+  fail("Loading goal titles", error);
+  return (data ?? []) as Pick<GoalRow, "id" | "title" | "stage">[];
 }
 
 /** One macro goal with its micro goals and their minis, for the detail screen. */
@@ -180,12 +232,19 @@ export async function getMacroGoal(id: string, timeZone: string): Promise<GoalNo
     .map((child) => child.completed_at)
     .filter((value): value is string => Boolean(value))
     .map((value) => localDateOf(value, timeZone));
-  const lastMovedOn = finishes.sort().at(-1) ?? localDateOf(macro.created_at, timeZone);
+  const marks = [...finishes, localDateOf(macro.created_at, timeZone)];
+  if (macro.recommitted_at) marks.push(localDateOf(macro.recommitted_at, timeZone));
+  const lastMovedOn = marks.sort().at(-1)!;
   const idleDays = daysBetween(lastMovedOn, todayIn(timeZone));
+
+  const { data: blocker } = macro.blocked_by
+    ? await db.from("goals").select("title").eq("id", macro.blocked_by).maybeSingle()
+    : { data: null };
 
   return {
     ...macro,
     category,
+    blockedByTitle: blocker?.title ?? null,
     imageUrl: macro.image_path ? signed.get(macro.image_path) ?? null : null,
     lastMovedOn,
     stalledDays: idleDays > STALLED_AFTER_DAYS ? idleDays : null,

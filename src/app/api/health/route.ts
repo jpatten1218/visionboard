@@ -5,6 +5,7 @@ import {
   getAvoidanceBoard,
   getCategories,
   getEvidence,
+  getMacroStages,
   getPyramid,
   getToday,
   getUniversalGoals,
@@ -34,7 +35,8 @@ export async function GET(request: NextRequest) {
   const timeZone = "America/Chicago";
 
   try {
-    const [pyramid, universal, today, evidence, avoidance, week, categories] = await Promise.all([
+    const [pyramid, universal, today, evidence, avoidance, week, categories, stages] =
+      await Promise.all([
       getPyramid(timeZone),
       getUniversalGoals(),
       getToday(timeZone),
@@ -42,6 +44,7 @@ export async function GET(request: NextRequest) {
       getAvoidanceBoard(),
       getWeek(timeZone),
       getCategories(),
+      getMacroStages(),
     ]);
 
     // A trivial write-then-delete, so the report covers more than reads.
@@ -60,7 +63,10 @@ export async function GET(request: NextRequest) {
       elapsedMs: Date.now() - startedAt,
       today: todayIn(timeZone),
       reads: {
-        macroGoals: pyramid.length,
+        macroGoalsInFocus: pyramid.length,
+        dreams: stages.dreams.length,
+        shelved: stages.shelved.length,
+        blocked: pyramid.filter((macro) => macro.blocked_by).length,
         microGoals: pyramid.reduce((n, macro) => n + macro.children.length, 0),
         miniGoals: pyramid.reduce(
           (n, macro) => n + macro.children.reduce((m, micro) => m + micro.children.length, 0),

@@ -7,6 +7,8 @@ export type GoalTier = "universal" | "macro" | "micro" | "mini" | "atomic";
 export type GoalStatus = "active" | "done" | "archived";
 export type GoalDomain = "general" | "spiritual" | "relational";
 export type IdeaPriority = "low" | "medium" | "high";
+export type GoalStage = "dream" | "focus" | "shelved";
+export type CheckRating = "low" | "mixed" | "high";
 
 export type CategoryRow = {
   id: string;
@@ -32,6 +34,16 @@ export type GoalRow = {
   detail: string | null;
   domain: GoalDomain;
   status: GoalStatus;
+  /** Macro goals only: dreamt, in focus now, or waiting its turn. */
+  stage: GoalStage;
+  check_alignment: CheckRating | null;
+  check_energy: CheckRating | null;
+  check_impact: CheckRating | null;
+  /** Another goal that has to happen first. */
+  blocked_by: string | null;
+  recommitted_at: string | null;
+  dropped_reason: string | null;
+  dropped_at: string | null;
   floor: string | null;
   ceiling: string | null;
   is_recurring: boolean;
