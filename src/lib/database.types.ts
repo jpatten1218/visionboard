@@ -8,11 +8,22 @@ export type GoalStatus = "active" | "done" | "archived";
 export type GoalDomain = "general" | "spiritual" | "relational";
 export type IdeaPriority = "low" | "medium" | "high";
 
+export type CategoryRow = {
+  id: string;
+  owner_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+};
+
 export type GoalRow = {
   id: string;
   owner_id: string;
   tier: GoalTier;
   parent_id: string | null;
+  category_id: string | null;
+  /** Optional target, never a deadline — see the workbook on fake timelines. */
+  target_on: string | null;
   title: string;
   detail: string | null;
   domain: GoalDomain;
@@ -91,6 +102,7 @@ export type Database = {
   public: {
     Tables: {
       goals: TableShape<GoalRow, "tier" | "title">;
+      categories: TableShape<CategoryRow, "name">;
       goal_completions: TableShape<GoalCompletionRow, "goal_id">;
       avoidance_items: TableShape<AvoidanceItemRow, "idea">;
       weekly_reviews: TableShape<WeeklyReviewRow, "week_start">;

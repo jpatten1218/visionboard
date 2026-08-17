@@ -46,6 +46,8 @@ export async function createGoal(formData: FormData) {
     tier,
     title,
     parent_id: parentId,
+    category_id: text(formData.get("category_id")),
+    target_on: text(formData.get("target_on")),
     detail: text(formData.get("detail")),
     floor: text(formData.get("floor")),
     ceiling: text(formData.get("ceiling")),
@@ -67,6 +69,8 @@ export async function updateGoal(formData: FormData) {
     .from("goals")
     .update({
       title,
+      category_id: text(formData.get("category_id")),
+      target_on: text(formData.get("target_on")),
       detail: text(formData.get("detail")),
       floor: text(formData.get("floor")),
       ceiling: text(formData.get("ceiling")),
@@ -138,6 +142,47 @@ export async function toggleHabitDay(goalId: string, day: string, hitCeiling = f
     const { error } = await db.from("goal_completions").delete().eq("id", existing.id);
     assertOk("Clearing the day", error);
   }
+  refresh();
+}
+
+export async function addCategory(formData: FormData) {
+  const name = text(formData.get("name"));
+  if (!name) return;
+
+  const db = supabaseAdmin();
+  const { data: last, error: readError } = await db
+    .from("categories")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  assertOk("Reading category order", readError);
+
+  const { error } = await db
+    .from("categories")
+    .insert({ name, sort_order: (last?.sort_order ?? 0) + 1 });
+  // A duplicate name is a slip, not a failure worth throwing an error page for.
+  if (error && !error.message.includes("duplicate key")) {
+    assertOk("Adding the category", error);
+  }
+  refresh();
+}
+
+export async function renameCategory(id: string, formData: FormData) {
+  const name = text(formData.get("name"));
+  if (!name) return;
+
+  const db = supabaseAdmin();
+  const { error } = await db.from("categories").update({ name }).eq("id", id);
+  assertOk("Renaming the category", error);
+  refresh();
+}
+
+/** Goals keep their place on the board; they just lose the label. */
+export async function deleteCategory(id: string) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("categories").delete().eq("id", id);
+  assertOk("Removing the category", error);
   refresh();
 }
 

@@ -1,7 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { todayIn } from "@/lib/dates";
-import { getAvoidanceBoard, getEvidence, getPyramid, getToday, getUniversalGoals, getWeek } from "@/lib/queries";
+import {
+  getAvoidanceBoard,
+  getCategories,
+  getEvidence,
+  getPyramid,
+  getToday,
+  getUniversalGoals,
+  getWeek,
+} from "@/lib/queries";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -26,13 +34,14 @@ export async function GET(request: NextRequest) {
   const timeZone = "America/Chicago";
 
   try {
-    const [pyramid, universal, today, evidence, avoidance, week] = await Promise.all([
+    const [pyramid, universal, today, evidence, avoidance, week, categories] = await Promise.all([
       getPyramid(),
       getUniversalGoals(),
       getToday(timeZone),
       getEvidence(),
       getAvoidanceBoard(),
       getWeek(timeZone),
+      getCategories(),
     ]);
 
     // A trivial write-then-delete, so the report covers more than reads.
@@ -58,6 +67,7 @@ export async function GET(request: NextRequest) {
           0,
         ),
         universalGoals: universal.length,
+        categories: categories.map((category) => category.name),
         atomicHabits: today.atomic.length,
         openMiniGoals: today.minis.length,
         evidenceEntries: evidence.length,

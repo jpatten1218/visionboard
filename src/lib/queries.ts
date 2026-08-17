@@ -4,6 +4,7 @@ import { recentDays, todayIn, weekStartOf } from "@/lib/dates";
 import { supabaseAdmin } from "@/lib/supabase";
 import type {
   AvoidanceItemRow,
+  CategoryRow,
   GoalCompletionRow,
   GoalRow,
   JournalEntryRow,
@@ -11,7 +12,18 @@ import type {
   WeeklyReviewRow,
 } from "@/lib/database.types";
 
-export type GoalNode = GoalRow & { children: GoalNode[] };
+export type GoalNode = GoalRow & { children: GoalNode[]; category: CategoryRow | null };
+
+export async function getCategories(): Promise<CategoryRow[]> {
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("categories")
+    .select("*")
+    .order("sort_order")
+    .order("name");
+  fail("Loading categories", error);
+  return (data ?? []) as CategoryRow[];
+}
 
 function fail(context: string, error: { message: string } | null): never | void {
   if (error) throw new Error(`${context}: ${error.message}`);
@@ -20,17 +32,26 @@ function fail(context: string, error: { message: string } | null): never | void 
 /** Macro goals with their micro and mini goals nested underneath. */
 export async function getPyramid(): Promise<GoalNode[]> {
   const db = supabaseAdmin();
-  const { data, error } = await db
-    .from("goals")
-    .select("*")
-    .in("tier", ["macro", "micro", "mini"])
-    .neq("status", "archived")
-    .order("sort_order")
-    .order("created_at");
-  fail("Loading the pyramid", error);
+  const [goalsResult, categories] = await Promise.all([
+    db
+      .from("goals")
+      .select("*")
+      .in("tier", ["macro", "micro", "mini"])
+      .neq("status", "archived")
+      .order("sort_order")
+      .order("created_at"),
+    getCategories(),
+  ]);
+  fail("Loading the pyramid", goalsResult.error);
 
-  const rows = (data ?? []) as GoalRow[];
-  const byId = new Map<string, GoalNode>(rows.map((row) => [row.id, { ...row, children: [] }]));
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const rows = (goalsResult.data ?? []) as GoalRow[];
+  const byId = new Map<string, GoalNode>(
+    rows.map((row) => [
+      row.id,
+      { ...row, children: [], category: row.category_id ? categoryById.get(row.category_id) ?? null : null },
+    ]),
+  );
   const roots: GoalNode[] = [];
 
   for (const node of byId.values()) {
@@ -39,7 +60,14 @@ export async function getPyramid(): Promise<GoalNode[]> {
     else if (node.tier === "macro") roots.push(node);
   }
 
-  return roots;
+  // Grouped by category so swiping across the board moves through one area of
+  // life at a time. Uncategorised macros trail the end.
+  const rank = new Map(categories.map((category, index) => [category.id, index]));
+  return roots.sort((a, b) => {
+    const aRank = a.category_id ? rank.get(a.category_id) ?? Infinity : Infinity;
+    const bRank = b.category_id ? rank.get(b.category_id) ?? Infinity : Infinity;
+    return aRank - bRank || a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at);
+  });
 }
 
 export async function getUniversalGoals(): Promise<GoalRow[]> {

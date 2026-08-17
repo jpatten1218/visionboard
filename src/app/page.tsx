@@ -1,15 +1,19 @@
 import { AddGoalForm } from "@/components/add-goal-form";
 import { BoardCarousel } from "@/components/board-carousel";
 import { GoalCard } from "@/components/goal-card";
-import { getPyramid, type GoalNode } from "@/lib/queries";
+import type { CategoryRow } from "@/lib/database.types";
+import { getCategories, getPyramid, type GoalNode } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function BoardPage() {
-  const macros = await getPyramid();
+  const [macros, categories] = await Promise.all([getPyramid(), getCategories()]);
 
   const panels = [
-    ...macros.map((macro) => ({ key: macro.id, node: <MacroPanel macro={macro} /> })),
-    { key: "new", node: <NewMacroPanel isFirst={macros.length === 0} /> },
+    ...macros.map((macro) => ({
+      key: macro.id,
+      node: <MacroPanel macro={macro} categories={categories} />,
+    })),
+    { key: "new", node: <NewMacroPanel isFirst={macros.length === 0} categories={categories} /> },
   ];
 
   return (
@@ -23,10 +27,10 @@ export default async function BoardPage() {
   );
 }
 
-function MacroPanel({ macro }: { macro: GoalNode }) {
+function MacroPanel({ macro, categories }: { macro: GoalNode; categories: CategoryRow[] }) {
   return (
     <div className="space-y-3 px-5 pb-8">
-      <GoalCard goal={macro} />
+      <GoalCard goal={macro} category={macro.category} categories={categories} />
 
       {macro.children.length === 0 ? (
         <p className="px-1 text-sm text-muted text-pretty">
@@ -56,7 +60,13 @@ function MacroPanel({ macro }: { macro: GoalNode }) {
   );
 }
 
-function NewMacroPanel({ isFirst }: { isFirst: boolean }) {
+function NewMacroPanel({
+  isFirst,
+  categories,
+}: {
+  isFirst: boolean;
+  categories: CategoryRow[];
+}) {
   return (
     <div className="space-y-4 px-5 pb-8">
       {isFirst ? (
@@ -64,7 +74,7 @@ function NewMacroPanel({ isFirst }: { isFirst: boolean }) {
           {PULL_QUOTES.direction}
         </p>
       ) : null}
-      <AddGoalForm tier="macro" label="Macro goal" withFloorCeiling />
+      <AddGoalForm tier="macro" label="Macro goal" categories={categories} withFloorCeiling />
       <p className="px-1 text-xs text-muted text-pretty">
         Six to eighteen months. No fake deadlines — you&apos;ve never done it before, so stop
         pretending you know the timeline. Swipe a card right to move it to Evidence.

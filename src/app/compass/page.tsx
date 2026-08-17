@@ -2,18 +2,33 @@ import { AddGoalForm } from "@/components/add-goal-form";
 import { Field } from "@/components/goal-card";
 import { JournalPrompt } from "@/components/journal-prompt";
 import { Screen } from "@/components/screen";
-import { addBook, deleteBook, saveWeeklyReview, toggleBookFinished } from "@/lib/actions";
+import {
+  addBook,
+  addCategory,
+  deleteBook,
+  deleteCategory,
+  renameCategory,
+  saveWeeklyReview,
+  toggleBookFinished,
+} from "@/lib/actions";
 import { formatDay, getTimezone } from "@/lib/dates";
-import { getJournal, getReadingList, getUniversalGoals, getWeek } from "@/lib/queries";
+import {
+  getCategories,
+  getJournal,
+  getReadingList,
+  getUniversalGoals,
+  getWeek,
+} from "@/lib/queries";
 import { DIRECTION_PROMPTS, INQUIRY_PROMPTS, PULL_QUOTES } from "@/lib/workbook";
 
 export default async function CompassPage() {
   const timeZone = await getTimezone();
-  const [universal, week, journal, books] = await Promise.all([
+  const [universal, week, journal, books, categories] = await Promise.all([
     getUniversalGoals(),
     getWeek(timeZone),
     getJournal(),
     getReadingList(),
+    getCategories(),
   ]);
 
   return (
@@ -118,6 +133,57 @@ export default async function CompassPage() {
         <p className="px-1 text-xs text-muted text-pretty">
           Get honest. Build strategies around your known hazards.
         </p>
+      </section>
+
+      <section className="mt-9">
+        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
+          Categories
+        </h2>
+        <ul className="space-y-2">
+          {categories.map((category) => (
+            <li key={category.id} className="rounded-2xl border border-border bg-surface px-3 py-2">
+              <form action={renameCategory.bind(null, category.id)} className="flex gap-2">
+                <input
+                  name="name"
+                  defaultValue={category.name}
+                  aria-label={`Rename ${category.name}`}
+                  className="min-h-11 min-w-0 flex-1 rounded-xl bg-transparent px-1 outline-none focus:bg-surface-sunk"
+                />
+                <button type="submit" className="min-h-11 px-2 text-xs text-muted">
+                  Save
+                </button>
+                <button
+                  type="submit"
+                  formNoValidate
+                  formAction={deleteCategory.bind(null, category.id)}
+                  aria-label={`Remove ${category.name}`}
+                  className="min-h-11 px-2 text-muted"
+                >
+                  ×
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 px-1 text-xs text-muted text-pretty">
+          Removing a category leaves its macro goals on the board — they just lose the label. The
+          board groups itself by this order.
+        </p>
+
+        <details className="mt-3 rounded-2xl border border-dashed border-border">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center px-4 text-sm text-muted marker:hidden">
+            + Add a category
+          </summary>
+          <form action={addCategory} className="space-y-2 border-t border-border px-4 py-3">
+            <Field name="name" label="Name" required placeholder="Craft" />
+            <button
+              type="submit"
+              className="min-h-11 w-full rounded-xl bg-accent text-sm font-medium text-accent-fg"
+            >
+              Add
+            </button>
+          </form>
+        </details>
       </section>
 
       <section className="mt-9">
