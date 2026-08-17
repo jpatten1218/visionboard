@@ -80,28 +80,45 @@ function MicroGoal({ micro }: { micro: GoalNode }) {
   const open = micro.children.filter((mini) => mini.status === "active");
   const done = micro.children.filter((mini) => mini.status === "done");
 
+  const hasMinis = micro.children.length > 0;
+
   return (
     <GoalCard goal={micro}>
-      {micro.children.length > 0 ? (
-        <p className="mt-3 text-xs text-muted">
-          {done.length} of {micro.children.length} mini goals done
-        </p>
-      ) : null}
+      {/* Collapsed once it has content, so a goal with ten micros reads as a
+          list rather than a wall. A micro with no minis yet opens, because
+          the thing it needs is the form inside. */}
+      <details open={!hasMinis} className="group mt-2">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 text-xs text-muted marker:hidden">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+          {hasMinis ? `${done.length} of ${micro.children.length} mini goals done` : "Add mini goals"}
+        </summary>
 
-      {micro.children.length > 0 ? (
-        <ul className="mt-2 space-y-1 border-l border-border pl-3">
-          {open.map((mini) => (
-            <MiniRow key={mini.id} mini={mini} />
-          ))}
-          {done.map((mini) => (
-            <MiniRow key={mini.id} mini={mini} done />
-          ))}
-        </ul>
-      ) : null}
+        {hasMinis ? (
+          <ul className="mt-1 space-y-1 border-l border-border pl-3">
+            {open.map((mini) => (
+              <MiniRow key={mini.id} mini={mini} />
+            ))}
+            {done.map((mini) => (
+              <MiniRow key={mini.id} mini={mini} done />
+            ))}
+          </ul>
+        ) : null}
 
-      <div className="mt-3">
-        <AddGoalForm tier="mini" parentId={micro.id} label="Mini goal — daily or weekly action" />
-      </div>
+        <div className="mt-3">
+          <AddGoalForm tier="mini" parentId={micro.id} label="Mini goal — daily or weekly action" />
+        </div>
+      </details>
     </GoalCard>
   );
 }
