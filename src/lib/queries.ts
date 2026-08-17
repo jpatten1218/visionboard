@@ -57,7 +57,10 @@ export async function getPyramid(): Promise<GoalNode[]> {
   for (const node of byId.values()) {
     const parent = node.parent_id ? byId.get(node.parent_id) : undefined;
     if (parent) parent.children.push(node);
-    else if (node.tier === "macro") roots.push(node);
+    // A finished macro goal leaves the board for the evidence pile — the
+    // workbook's board empties as you become the person who cleared it.
+    // Finished micros and minis stay visible under their parent as progress.
+    else if (node.tier === "macro" && node.status === "active") roots.push(node);
   }
 
   // Grouped by category so swiping across the board moves through one area of
@@ -68,6 +71,59 @@ export async function getPyramid(): Promise<GoalNode[]> {
     const bRank = b.category_id ? rank.get(b.category_id) ?? Infinity : Infinity;
     return aRank - bRank || a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at);
   });
+}
+
+/** One macro goal with its micro goals and their minis, for the detail screen. */
+export async function getMacroGoal(id: string): Promise<GoalNode | null> {
+  const db = supabaseAdmin();
+  // Parameterised equality rather than an interpolated `.or()` filter, so a
+  // hand-crafted URL cannot smuggle PostgREST syntax into the query.
+  const [macroResult, microResult, categories] = await Promise.all([
+    db.from("goals").select("*").eq("id", id).eq("tier", "macro").maybeSingle(),
+    db
+      .from("goals")
+      .select("*")
+      .eq("parent_id", id)
+      .neq("status", "archived")
+      .order("sort_order")
+      .order("created_at"),
+    getCategories(),
+  ]);
+  fail("Loading the goal", macroResult.error);
+  fail("Loading micro goals", microResult.error);
+
+  const macro = macroResult.data as GoalRow | null;
+  if (!macro) return null;
+
+  const micros = (microResult.data ?? []) as GoalRow[];
+
+  // Minis hang off the micros, so they need a second round trip.
+  const { data: miniRows, error: miniError } = micros.length
+    ? await db
+        .from("goals")
+        .select("*")
+        .in("parent_id", micros.map((micro) => micro.id))
+        .neq("status", "archived")
+        .order("sort_order")
+        .order("created_at")
+    : { data: [], error: null };
+  fail("Loading mini goals", miniError);
+
+  const category = macro.category_id
+    ? categories.find((entry) => entry.id === macro.category_id) ?? null
+    : null;
+
+  return {
+    ...macro,
+    category,
+    children: micros.map((micro) => ({
+      ...micro,
+      category: null,
+      children: ((miniRows ?? []) as GoalRow[])
+        .filter((mini) => mini.parent_id === micro.id)
+        .map((mini) => ({ ...mini, category: null, children: [] })),
+    })),
+  };
 }
 
 export async function getUniversalGoals(): Promise<GoalRow[]> {
