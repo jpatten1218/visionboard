@@ -80,6 +80,22 @@ function fail(context: string, error: { message: string } | null): never | void 
   if (error) throw new Error(`${context}: ${error.message}`);
 }
 
+/**
+ * Soonest target first, undated trailing the end, so a goal's breakdown reads
+ * as the sequence you'll actually work it in. "9999" puts nulls last without
+ * special-casing them.
+ */
+function byTargetDate<T extends Pick<GoalRow, "target_on" | "sort_order" | "created_at">>(
+  a: T,
+  b: T,
+): number {
+  return (
+    (a.target_on ?? "9999").localeCompare(b.target_on ?? "9999") ||
+    a.sort_order - b.sort_order ||
+    a.created_at.localeCompare(b.created_at)
+  );
+}
+
 /** Macro goals with their micro and mini goals nested underneath. */
 export async function getPyramid(timeZone: string): Promise<GoalNode[]> {
   const db = supabaseAdmin();
@@ -211,7 +227,7 @@ export async function getMacroGoal(id: string, timeZone: string): Promise<GoalNo
   const macro = macroResult.data as GoalRow | null;
   if (!macro) return null;
 
-  const micros = (microResult.data ?? []) as GoalRow[];
+  const micros = ((microResult.data ?? []) as GoalRow[]).sort(byTargetDate);
 
   // Minis hang off the micros, so they need a second round trip.
   const { data: miniRows, error: miniError } = micros.length
@@ -256,6 +272,7 @@ export async function getMacroGoal(id: string, timeZone: string): Promise<GoalNo
       category: null,
       children: ((miniRows ?? []) as GoalRow[])
         .filter((mini) => mini.parent_id === micro.id)
+        .sort(byTargetDate)
         .map((mini) => ({ ...mini, category: null, children: [] })),
     })),
   };
@@ -362,17 +379,12 @@ export async function getToday(timeZone: string): Promise<TodayBoard> {
     )
     .map(label);
 
-  const byDate = (a: Labelled, b: Labelled) =>
-    (a.target_on ?? "9999").localeCompare(b.target_on ?? "9999") ||
-    a.sort_order - b.sort_order ||
-    a.created_at.localeCompare(b.created_at);
-
-  const committed = workable.filter((goal) => goal.planned_on === today).sort(byDate);
+  const committed = workable.filter((goal) => goal.planned_on === today).sort(byTargetDate);
   const carried = workable
     .filter((goal) => goal.planned_on !== null && goal.planned_on < today)
-    .sort(byDate);
+    .sort(byTargetDate);
 
-  const uncommitted = workable.filter((goal) => goal.planned_on === null).sort(byDate);
+  const uncommitted = workable.filter((goal) => goal.planned_on === null).sort(byTargetDate);
   const weekEnd = weekEndOf(today);
   const dated = uncommitted.filter((goal) => goal.target_on !== null);
 
