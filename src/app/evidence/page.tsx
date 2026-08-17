@@ -172,11 +172,11 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
                       </span>
                     </span>
                     <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted">
-                      {entry.kind === "finished" && entry.tier
-                        ? TIERS[entry.tier].label
-                        : entry.kind === "logged"
-                          ? "Logged"
-                          : "Added"}
+                      {/* The tier names the work whether it was finished once
+                          or logged for a day — a habit day reads "Atomic",
+                          not the mechanism that recorded it. Only hand-added
+                          wins have no tier to show. */}
+                      {entry.tier ? TIERS[entry.tier].label : "Added"}
                     </span>
                     {entry.kind === "added" ? (
                       <form action={deleteEvidenceEntry.bind(null, entry.id.replace("added:", ""))}>
