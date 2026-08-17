@@ -77,9 +77,11 @@ export function EvidenceStack({ entries }: { entries: EvidenceEntry[] }) {
           />
         ))}
       </div>
-      {earlier > 0 ? (
-        <p className="mt-1.5 text-xs text-muted">plus {earlier} stacked earlier</p>
-      ) : null}
+      <p className="mt-2 text-xs text-muted text-pretty">
+        Each block is one win, coloured by the part of life it came from.
+        {next ? ` The faded ones are the room left to ${next}.` : ""}
+        {earlier > 0 ? ` Plus ${earlier} stacked earlier.` : ""}
+      </p>
     </div>
   );
 }
@@ -159,10 +161,16 @@ export function MomentumCurve({
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <figcaption className="mt-1 text-xs text-muted">
-        {max - min === 0
-          ? `Steady at ${max} over the last ${Math.round(days / 7)} weeks`
-          : `Up ${max - min} in the last ${Math.round(days / 7)} weeks`}
+      {/* Without end-labels this is an unlabelled squiggle. The axis is time,
+          the height is the running total, and both need saying. */}
+      <div className="mt-1 flex items-baseline justify-between text-xs text-muted">
+        <span>{Math.round(days / 7)} weeks ago · {min}</span>
+        <span className="text-foreground">today · {max}</span>
+      </div>
+      <figcaption className="mt-1.5 text-xs text-muted text-pretty">
+        Your running total of wins. It climbs when you stack one and flattens when you don&apos;t —
+        it never goes down.
+        {max - min > 0 ? ` Up ${max - min} in the last ${Math.round(days / 7)} weeks.` : ""}
       </figcaption>
     </figure>
   );

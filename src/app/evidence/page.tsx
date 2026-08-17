@@ -20,7 +20,7 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
 
   const timeZone = await getTimezone();
   const today = todayIn(timeZone);
-  const [entries, categories] = await Promise.all([getEvidence(), getCategories()]);
+  const [entries, categories] = await Promise.all([getEvidence(timeZone), getCategories()]);
 
   const last7 = new Set(recentDays(today, 7));
   const activeLast7 = new Set(

@@ -109,6 +109,21 @@ export async function completeGoal(id: string) {
   refresh();
 }
 
+/** Pulls a goal onto a given day — the digital version of moving the sticky. */
+export async function planForDay(id: string, day: string) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("goals").update({ planned_on: day }).eq("id", id);
+  assertOk("Committing to the goal", error);
+  refresh();
+}
+
+export async function unplanGoal(id: string) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("goals").update({ planned_on: null }).eq("id", id);
+  assertOk("Putting the goal back", error);
+  refresh();
+}
+
 export async function reopenGoal(id: string) {
   const db = supabaseAdmin();
   const { error } = await db

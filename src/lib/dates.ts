@@ -45,6 +45,15 @@ export function weekStartOf(isoDate: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * The calendar date a timestamp fell on *in the user's zone*. Slicing the
+ * first ten characters off a timestamptz gives the UTC date, which files
+ * anything done after early evening in the Americas under tomorrow.
+ */
+export function localDateOf(timestamp: string, timeZone: string): string {
+  return todayIn(timeZone, new Date(timestamp));
+}
+
 /** The Sunday closing the week that contains `isoDate`. */
 export function weekEndOf(isoDate: string): string {
   const date = new Date(`${weekStartOf(isoDate)}T00:00:00Z`);

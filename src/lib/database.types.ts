@@ -26,6 +26,8 @@ export type GoalRow = {
   category_id: string | null;
   /** Optional target, never a deadline — see the workbook on fake timelines. */
   target_on: string | null;
+  /** The day you committed to doing it, which is not the day it is due. */
+  planned_on: string | null;
   title: string;
   detail: string | null;
   domain: GoalDomain;

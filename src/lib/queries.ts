@@ -2,9 +2,7 @@ import "server-only";
 
 import {
   daysBetween,
-  monthEndOf,
-  nextDay,
-  quarterEndOf,
+  localDateOf,
   recentDays,
   todayIn,
   weekEndOf,
@@ -116,9 +114,9 @@ export async function getPyramid(timeZone: string): Promise<GoalNode[]> {
     ]
       .map((child) => child.completed_at)
       .filter((value): value is string => Boolean(value))
-      .map((value) => value.slice(0, 10));
+      .map((value) => localDateOf(value, timeZone));
 
-    const lastMovedOn = finishes.sort().at(-1) ?? macro.created_at.slice(0, 10);
+    const lastMovedOn = finishes.sort().at(-1) ?? localDateOf(macro.created_at, timeZone);
     const idleDays = daysBetween(lastMovedOn, today);
 
     macro.lastMovedOn = lastMovedOn;
@@ -181,8 +179,8 @@ export async function getMacroGoal(id: string, timeZone: string): Promise<GoalNo
   const finishes = [...micros, ...((miniRows ?? []) as GoalRow[])]
     .map((child) => child.completed_at)
     .filter((value): value is string => Boolean(value))
-    .map((value) => value.slice(0, 10));
-  const lastMovedOn = finishes.sort().at(-1) ?? macro.created_at.slice(0, 10);
+    .map((value) => localDateOf(value, timeZone));
+  const lastMovedOn = finishes.sort().at(-1) ?? localDateOf(macro.created_at, timeZone);
   const idleDays = daysBetween(lastMovedOn, todayIn(timeZone));
 
   return {
@@ -219,12 +217,16 @@ export type Horizon = { key: string; label: string; goals: Labelled[] };
 
 export type TodayBoard = {
   today: string;
+  /** Step one: the floor. Ticked per day, never "finished". */
   atomic: (Labelled & { doneToday: boolean; streak: number })[];
-  /** Overdue, then this week, month, and quarter. Empty buckets are dropped. */
-  horizons: Horizon[];
-  /** Dated past the quarter, plus everything with no date — both folded away. */
-  later: Labelled[];
-  undated: Labelled[];
+  /** Step two: what you committed to today. */
+  committed: Labelled[];
+  /** Committed to an earlier day and still open — offered forward, not nagged. */
+  carried: Labelled[];
+  /** Candidates to pull onto today, grouped by why they are worth considering. */
+  candidates: Horizon[];
+  /** Step three: what actually moved today, habits included. */
+  movedToday: { id: string; title: string; kind: "goal" | "habit" }[];
 };
 
 /**
@@ -243,7 +245,8 @@ export async function getToday(timeZone: string): Promise<TodayBoard> {
       .from("goals")
       .select("*")
       .neq("tier", "universal")
-      .eq("status", "active")
+      // Done goals come along so the close-out can report what moved today.
+      .neq("status", "archived")
       .order("sort_order")
       .order("created_at"),
     db.from("goal_completions").select("*").gte("completed_on", window[0]),
@@ -283,49 +286,83 @@ export async function getToday(timeZone: string): Promise<TodayBoard> {
   }
 
   const atomic = goals
-    .filter((goal) => goal.tier === "atomic")
+    .filter((goal) => goal.tier === "atomic" && goal.status === "active")
     .map((goal) => {
       const done = doneByGoal.get(goal.id) ?? new Set<string>();
       return { ...label(goal), doneToday: done.has(today), streak: streakEndingAt(done, today) };
     });
 
-  const scheduled = goals.filter((goal) => goal.tier !== "atomic").map(label);
+  // Only micro and mini goals are day-sized. A macro goal is the thing they
+  // ladder up to, so it is never something you "do today".
+  const workable = goals
+    .filter(
+      (goal) => goal.status === "active" && (goal.tier === "micro" || goal.tier === "mini"),
+    )
+    .map(label);
+
   const byDate = (a: Labelled, b: Labelled) =>
-    (a.target_on ?? "").localeCompare(b.target_on ?? "") ||
+    (a.target_on ?? "9999").localeCompare(b.target_on ?? "9999") ||
     a.sort_order - b.sort_order ||
     a.created_at.localeCompare(b.created_at);
 
+  const committed = workable.filter((goal) => goal.planned_on === today).sort(byDate);
+  const carried = workable
+    .filter((goal) => goal.planned_on !== null && goal.planned_on < today)
+    .sort(byDate);
+
+  const uncommitted = workable.filter((goal) => goal.planned_on === null).sort(byDate);
   const weekEnd = weekEndOf(today);
-  const monthEnd = monthEndOf(today);
-  const quarterEnd = quarterEndOf(today);
+  const dated = uncommitted.filter((goal) => goal.target_on !== null);
 
-  const dated = scheduled.filter((goal) => goal.target_on !== null).sort(byDate);
-  const inRange = (goal: Labelled, from: string, to: string) =>
-    goal.target_on! >= from && goal.target_on! <= to;
+  // One concrete next action per micro goal: its first open mini, or the
+  // micro itself when it has none. Without this the picker would only ever
+  // offer minis, and a board built mostly of micros would look unpullable.
+  const minisByParent = new Map<string, Labelled[]>();
+  for (const goal of uncommitted) {
+    if (goal.tier !== "mini" || !goal.parent_id) continue;
+    minisByParent.set(goal.parent_id, [...(minisByParent.get(goal.parent_id) ?? []), goal]);
+  }
 
-  const horizons: Horizon[] = [
-    // Overdue is not a bucket the workbook asks for, but without it anything
-    // whose date has passed would silently vanish from every section.
-    { key: "overdue", label: "Overdue", goals: dated.filter((g) => g.target_on! < today) },
-    { key: "week", label: "This week", goals: dated.filter((g) => inRange(g, today, weekEnd)) },
+  const nextActions = uncommitted
+    .filter((goal) => goal.tier === "micro")
+    .map((micro) => minisByParent.get(micro.id)?.[0] ?? micro);
+
+  const overdue = dated.filter((goal) => goal.target_on! < today);
+  const dueThisWeek = dated.filter(
+    (goal) => goal.target_on! >= today && goal.target_on! <= weekEnd,
+  );
+
+  // A goal already listed as overdue or due shouldn't appear twice.
+  const alreadyOffered = new Set([...overdue, ...dueThisWeek].map((goal) => goal.id));
+
+  const candidates: Horizon[] = [
+    { key: "overdue", label: "Overdue", goals: overdue },
+    { key: "week", label: "Due this week", goals: dueThisWeek },
     {
-      key: "month",
-      label: "This month",
-      goals: dated.filter((g) => inRange(g, nextDay(weekEnd), monthEnd)),
+      key: "next",
+      label: "Next up on the board",
+      goals: nextActions.filter((goal) => !alreadyOffered.has(goal.id)).slice(0, 10),
     },
-    {
-      key: "quarter",
-      label: "This quarter",
-      goals: dated.filter((g) => inRange(g, nextDay(monthEnd), quarterEnd)),
-    },
-  ].filter((horizon) => horizon.goals.length > 0);
+  ].filter((group) => group.goals.length > 0);
+
+  const finishedToday = goals
+    .filter((goal) => goal.completed_at && localDateOf(goal.completed_at, timeZone) === today)
+    .map((goal) => ({ id: goal.id, title: goal.title, kind: "goal" as const }));
+  const loggedToday = completions
+    .filter((completion) => completion.completed_on === today)
+    .map((completion) => ({
+      id: completion.id,
+      title: byId.get(completion.goal_id)?.title ?? "Habit",
+      kind: "habit" as const,
+    }));
 
   return {
     today,
     atomic,
-    horizons,
-    later: dated.filter((goal) => goal.target_on! > quarterEnd),
-    undated: scheduled.filter((goal) => goal.target_on === null).sort(byDate),
+    committed,
+    carried,
+    candidates,
+    movedToday: [...finishedToday, ...loggedToday],
   };
 }
 
@@ -361,7 +398,7 @@ export type EvidenceEntry = {
  * Part 05 — the proof pile. Three sources: goals you finished, habit days you
  * logged, and wins you added by hand that were never on the board.
  */
-export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
+export async function getEvidence(timeZone: string, limit = 200): Promise<EvidenceEntry[]> {
   const db = supabaseAdmin();
   const [finishedResult, loggedResult, addedResult, allGoalsResult, categories] = await Promise.all([
     db
@@ -419,7 +456,7 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
     id: `goal:${goal.id}`,
     title: goal.title,
     tier: goal.tier,
-    on: (goal.completed_at ?? goal.updated_at).slice(0, 10),
+    on: localDateOf(goal.completed_at ?? goal.updated_at, timeZone),
     note: goal.detail,
     ...categoryOfGoal(goal.id),
     kind: "finished",
