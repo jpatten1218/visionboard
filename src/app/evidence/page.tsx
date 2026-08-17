@@ -24,6 +24,15 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
   const today = todayIn(timeZone);
   const [entries, categories] = await Promise.all([getEvidence(timeZone), getCategories()]);
 
+  const stackedToday = entries.filter((entry) => entry.on === today);
+  // A group holding something from today opens itself, so the newest win is
+  // never hidden behind a fold.
+  const openSections = new Set(
+    stackedToday.map((entry) =>
+      groupByCategory ? entry.categoryName ?? "Uncategorised" : entry.on,
+    ),
+  );
+
   const last7 = new Set(recentDays(today, 7));
   const activeLast7 = new Set(
     entries.filter((entry) => last7.has(entry.on)).map((entry) => entry.on),
@@ -72,6 +81,17 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
         </span>
       </div>
       <MilestoneMeter total={entries.length} />
+
+      {/* Groups are folded by default, which meant a win you had just logged
+          vanished into a closed section with nothing to show it landed. */}
+      {stackedToday.length > 0 ? (
+        <p className="mt-4 rounded-2xl border border-emerald-600/30 bg-emerald-600/5 px-4 py-3 text-sm text-pretty">
+          <strong className="font-medium">
+            {stackedToday.length} stacked today:
+          </strong>{" "}
+          {stackedToday.map((entry) => entry.title).join(" · ")}
+        </p>
+      ) : null}
 
       <section className="mt-7">
         <h2 className="mb-2 text-[11px] uppercase tracking-[0.16em] text-muted">The stack</h2>
@@ -142,7 +162,7 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
             // Folded by default: the count in the summary is the proof, and
             // the pile above already carries the feeling. Open one when you
             // actually want to read what's in it.
-            <details key={section} className="group">
+            <details key={section} open={openSections.has(section)} className="group">
               <summary className="flex cursor-pointer list-none items-center gap-2 px-1 py-1.5 text-xs font-medium text-muted marker:hidden">
                 <svg
                   viewBox="0 0 24 24"
