@@ -182,7 +182,18 @@ export async function getToday(timeZone: string): Promise<TodayBoard> {
       return { ...goal, doneToday: done.has(today), streak: streakEndingAt(done, today) };
     });
 
-  return { today, atomic, minis: goals.filter((goal) => goal.tier === "mini") };
+  // Now that minis can carry a target, the daily screen leads with whatever
+  // is dated soonest; undated ones follow in the order they were written.
+  const minis = goals
+    .filter((goal) => goal.tier === "mini")
+    .sort((a, b) => {
+      if (a.target_on && b.target_on) return a.target_on.localeCompare(b.target_on);
+      if (a.target_on) return -1;
+      if (b.target_on) return 1;
+      return a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at);
+    });
+
+  return { today, atomic, minis };
 }
 
 /**

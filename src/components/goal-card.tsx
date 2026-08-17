@@ -95,7 +95,10 @@ export function GoalCard({
                 </div>
               ) : goal.tier === "atomic" ? (
                 <CategorySelect categories={categories ?? []} defaultValue={goal.category_id ?? ""} />
-              ) : null}
+              ) : (
+                // Micro and mini goals end, so they can carry a target too.
+                <DateField name="target_on" label="Target" defaultValue={goal.target_on ?? ""} />
+              )}
               <FloorCeilingFields floor={goal.floor} ceiling={goal.ceiling} />
               <div className="flex gap-2">
                 <button

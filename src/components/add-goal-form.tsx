@@ -21,6 +21,9 @@ export function AddGoalForm({
   const isMacro = tier === "macro";
   // Habits carry a category too, so logged days can be grouped on Evidence.
   const showsCategory = isMacro || tier === "atomic";
+  // Every tier that ends can carry a target. Atomic habits recur, so they
+  // have a streak instead of a date.
+  const showsDate = tier === "macro" || tier === "micro" || tier === "mini";
 
   return (
     <details className="rounded-2xl border border-dashed border-border">
@@ -37,22 +40,23 @@ export function AddGoalForm({
           placeholder={meta.examples[0] ?? "Write it in marker"}
         />
         <Field name="detail" label="Detail" />
-        {showsCategory ? (
-          isMacro ? (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <CategorySelect categories={categories ?? []} />
-                <DateField name="target_on" label="Target" />
-              </div>
-              <p className="text-xs text-muted text-pretty">
-                A target is optional. The workbook argues against fixed deadlines on a macro goal —
-                you&apos;ve never done it before, so the date is a direction, not a debt.
-              </p>
-            </>
-          ) : (
-            <CategorySelect categories={categories ?? []} />
-          )
-        ) : null}
+        {isMacro ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <CategorySelect categories={categories ?? []} />
+              <DateField name="target_on" label="Target" />
+            </div>
+            <p className="text-xs text-muted text-pretty">
+              A target is optional. The workbook argues against fixed deadlines on a macro goal —
+              you&apos;ve never done it before, so the date is a direction, not a debt.
+            </p>
+          </>
+        ) : (
+          <>
+            {showsCategory ? <CategorySelect categories={categories ?? []} /> : null}
+            {showsDate ? <DateField name="target_on" label="Target" /> : null}
+          </>
+        )}
         {withFloorCeiling ? <FloorCeilingFields /> : null}
         <p className="text-xs text-muted text-pretty">{meta.blurb}</p>
         <button

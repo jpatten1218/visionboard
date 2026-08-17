@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { AddGoalForm } from "@/components/add-goal-form";
 import { GoalCard } from "@/components/goal-card";
 import { Screen } from "@/components/screen";
-import { reopenGoal } from "@/lib/actions";
+import { completeGoal, deleteGoal, reopenGoal } from "@/lib/actions";
+import { formatDay } from "@/lib/dates";
 import { getCategories, getMacroGoal, type GoalNode } from "@/lib/queries";
 
 export default async function GoalPage({ params }: PageProps<"/goal/[id]">) {
@@ -76,22 +77,90 @@ export default async function GoalPage({ params }: PageProps<"/goal/[id]">) {
 }
 
 function MicroGoal({ micro }: { micro: GoalNode }) {
-  const minis = micro.children.filter((mini) => mini.status === "active");
+  const open = micro.children.filter((mini) => mini.status === "active");
+  const done = micro.children.filter((mini) => mini.status === "done");
 
   return (
     <GoalCard goal={micro}>
-      {minis.length > 0 ? (
-        <ul className="mt-3 space-y-1.5 border-l border-border pl-3">
-          {minis.map((mini) => (
-            <li key={mini.id} className="text-sm text-muted text-pretty">
-              {mini.title}
-            </li>
+      {micro.children.length > 0 ? (
+        <p className="mt-3 text-xs text-muted">
+          {done.length} of {micro.children.length} mini goals done
+        </p>
+      ) : null}
+
+      {micro.children.length > 0 ? (
+        <ul className="mt-2 space-y-1 border-l border-border pl-3">
+          {open.map((mini) => (
+            <MiniRow key={mini.id} mini={mini} />
+          ))}
+          {done.map((mini) => (
+            <MiniRow key={mini.id} mini={mini} done />
           ))}
         </ul>
       ) : null}
+
       <div className="mt-3">
         <AddGoalForm tier="mini" parentId={micro.id} label="Mini goal — daily or weekly action" />
       </div>
     </GoalCard>
+  );
+}
+
+/**
+ * Ticked in place, rather than swiped like the cards above it. A swipe here
+ * would sit inside the micro goal's own swipe target and the two would fight
+ * over the same gesture.
+ */
+function MiniRow({ mini, done }: { mini: GoalNode; done?: boolean }) {
+  return (
+    <li className="flex items-start gap-2.5 py-1">
+      <form action={(done ? reopenGoal : completeGoal).bind(null, mini.id)} className="shrink-0">
+        <button
+          type="submit"
+          aria-label={done ? `Reopen ${mini.title}` : `Complete ${mini.title}`}
+          aria-pressed={Boolean(done)}
+          // The row is compact, so the tap target is padded out to 44pt
+          // rather than being only as big as the circle it draws.
+          className="-m-2.5 grid h-11 w-11 place-items-center"
+        >
+          <span
+            className={`grid h-5 w-5 place-items-center rounded-full border-2 ${
+              done ? "border-emerald-600 bg-emerald-600 text-white" : "border-border"
+            }`}
+          >
+            {done ? (
+              <svg
+                viewBox="0 0 24 24"
+                className="h-3 w-3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 12l4 4L19 7" />
+              </svg>
+            ) : null}
+          </span>
+        </button>
+      </form>
+
+      <span className="min-w-0 flex-1 pt-0.5">
+        <span className={`block text-sm text-pretty ${done ? "text-muted line-through" : ""}`}>
+          {mini.title}
+        </span>
+        {mini.target_on ? (
+          <span className="mt-0.5 block text-[11px] text-muted">
+            Target {formatDay(mini.target_on)}
+          </span>
+        ) : null}
+      </span>
+
+      <form action={deleteGoal.bind(null, mini.id)} className="shrink-0">
+        <button type="submit" aria-label={`Remove ${mini.title}`} className="px-1 text-muted">
+          ×
+        </button>
+      </form>
+    </li>
   );
 }
