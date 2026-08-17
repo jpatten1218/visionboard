@@ -1,15 +1,20 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { NORTH_STAR_KEY, NorthStar } from "@/components/north-star";
 import { EmptyState, Screen } from "@/components/screen";
 import { categoryColor } from "@/lib/category-color";
 import { countdown, getTimezone, todayIn } from "@/lib/dates";
-import { getMacroStages, getPyramid, type GoalNode } from "@/lib/queries";
+import { getJournal, getMacroStages, getPyramid, type GoalNode } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function BoardPage() {
   const timeZone = await getTimezone();
-  const [macros, { dreams }] = await Promise.all([getPyramid(timeZone), getMacroStages()]);
+  const [macros, { dreams }, journal] = await Promise.all([
+    getPyramid(timeZone),
+    getMacroStages(),
+    getJournal(),
+  ]);
   const today = todayIn(timeZone);
 
   // getPyramid already orders by category, so grouping is a single pass.
@@ -26,7 +31,11 @@ export default async function BoardPage() {
   }
 
   return (
-    <Screen eyebrow="The board" title="Everything ladders up.">
+    <Screen title="The board">
+      <div className="mb-6">
+        <NorthStar initial={journal.get(NORTH_STAR_KEY) ?? ""} />
+      </div>
+
       {/* One quiet line, not a warning. The dream board is where deciding
           happens; the board itself just shows what won. */}
       <Link
