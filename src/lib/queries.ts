@@ -8,6 +8,7 @@ import {
   weekEndOf,
   weekStartOf,
 } from "@/lib/dates";
+import { CADENCE_PER_MONTH, IDLE_AFTER_DAYS } from "@/lib/programs";
 import { IMAGE_BUCKET, supabaseAdmin } from "@/lib/supabase";
 import type {
   AvoidanceItemRow,
@@ -16,6 +17,8 @@ import type {
   GoalCompletionRow,
   GoalRow,
   JournalEntryRow,
+  ProgramEngagementRow,
+  ProgramRow,
   ReadingListRow,
   WeeklyReviewRow,
 } from "@/lib/database.types";
@@ -632,6 +635,86 @@ export async function getWeek(timeZone: string): Promise<WeekSummary> {
     review: (reviewResult.data as WeeklyReviewRow | null) ?? null,
     consistencyPct: opportunities === 0 ? 0 : Math.round((hits / opportunities) * 100),
     perGoal,
+  };
+}
+
+export type ProgramView = ProgramRow & {
+  goalTitle: string | null;
+  lastEngagedOn: string | null;
+  /** Days since you last showed up. Null when you never have. */
+  idleDays: number | null;
+  engagements: number;
+};
+
+export type ProgramBoard = {
+  programs: ProgramView[];
+  totalInvested: number;
+  /** Money tied up in things untouched for a month or more. */
+  idleInvested: number;
+  activeCount: number;
+  idleCount: number;
+  monthlyCommitments: number;
+  endingSoon: ProgramView[];
+};
+
+export async function getPrograms(timeZone: string): Promise<ProgramBoard> {
+  const db = supabaseAdmin();
+  const today = todayIn(timeZone);
+
+  const [programsResult, engagementsResult, goalsResult] = await Promise.all([
+    db.from("programs").select("*").order("created_at", { ascending: false }),
+    db.from("program_engagements").select("*").order("engaged_on", { ascending: false }),
+    db.from("goals").select("id, title").eq("tier", "macro"),
+  ]);
+  fail("Loading programs", programsResult.error);
+  fail("Loading program engagements", engagementsResult.error);
+  fail("Loading goal titles", goalsResult.error);
+
+  const engagements = (engagementsResult.data ?? []) as ProgramEngagementRow[];
+  const goalTitles = new Map((goalsResult.data ?? []).map((row) => [row.id, row.title]));
+
+  const byProgram = new Map<string, ProgramEngagementRow[]>();
+  for (const entry of engagements) {
+    byProgram.set(entry.program_id, [...(byProgram.get(entry.program_id) ?? []), entry]);
+  }
+
+  const programs: ProgramView[] = ((programsResult.data ?? []) as ProgramRow[]).map((program) => {
+    const mine = byProgram.get(program.id) ?? [];
+    // Already sorted newest first by the query.
+    const lastEngagedOn = mine[0]?.engaged_on ?? null;
+    return {
+      ...program,
+      goalTitle: program.goal_id ? goalTitles.get(program.goal_id) ?? null : null,
+      lastEngagedOn,
+      idleDays: lastEngagedOn ? daysBetween(lastEngagedOn, today) : null,
+      engagements: mine.length,
+    };
+  });
+
+  const live = programs.filter((program) => program.status === "active");
+  // Never-engaged counts as idle: it is the worst case, not an exception.
+  const isIdle = (program: ProgramView) =>
+    program.status === "active" && (program.idleDays === null || program.idleDays >= IDLE_AFTER_DAYS);
+
+  const soon = programs.filter(
+    (program) =>
+      program.ends_on !== null &&
+      !program.evergreen &&
+      program.status === "active" &&
+      daysBetween(today, program.ends_on) <= 60,
+  );
+
+  return {
+    programs,
+    totalInvested: programs.reduce((sum, program) => sum + Number(program.cost ?? 0), 0),
+    idleInvested: programs.filter(isIdle).reduce((sum, p) => sum + Number(p.cost ?? 0), 0),
+    activeCount: live.length,
+    idleCount: programs.filter(isIdle).length,
+    monthlyCommitments: live.reduce(
+      (sum, program) => sum + CADENCE_PER_MONTH[program.cadence],
+      0,
+    ),
+    endingSoon: soon.sort((a, b) => (a.ends_on ?? "").localeCompare(b.ends_on ?? "")),
   };
 }
 

@@ -8,6 +8,46 @@ export type GoalStatus = "active" | "done" | "archived";
 export type GoalDomain = "general" | "spiritual" | "relational";
 export type IdeaPriority = "low" | "medium" | "high";
 export type GoalStage = "dream" | "focus" | "shelved";
+export type ProgramCadence =
+  | "daily"
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "quarterly"
+  | "in_person"
+  | "self_paced"
+  | "none";
+export type ProgramStatus = "active" | "completed" | "lapsed" | "not_started";
+
+export type ProgramRow = {
+  id: string;
+  owner_id: string;
+  name: string;
+  provider: string | null;
+  cost: number | null;
+  cost_tier: number | null;
+  cadence: ProgramCadence;
+  commitment: string | null;
+  goal_id: string | null;
+  status: ProgramStatus;
+  started_on: string | null;
+  ends_on: string | null;
+  /** Ongoing with no end date — deliberate, not a missing value. */
+  evergreen: boolean;
+  url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProgramEngagementRow = {
+  id: string;
+  owner_id: string;
+  program_id: string;
+  engaged_on: string;
+  note: string | null;
+  created_at: string;
+};
 export type CheckRating = "low" | "mixed" | "high";
 
 export type CategoryRow = {
@@ -130,6 +170,8 @@ export type Database = {
       goals: TableShape<GoalRow, "tier" | "title">;
       categories: TableShape<CategoryRow, "name">;
       evidence_entries: TableShape<EvidenceEntryRow, "title">;
+      programs: TableShape<ProgramRow, "name">;
+      program_engagements: TableShape<ProgramEngagementRow, "program_id" | "engaged_on">;
       goal_completions: TableShape<GoalCompletionRow, "goal_id">;
       avoidance_items: TableShape<AvoidanceItemRow, "idea">;
       weekly_reviews: TableShape<WeeklyReviewRow, "week_start">;

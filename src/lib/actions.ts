@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 
 import { PALETTE_SLOTS } from "@/lib/category-color";
-import type { GoalDomain, GoalTier, IdeaPriority } from "@/lib/database.types";
+import type {
+  GoalDomain,
+  GoalTier,
+  IdeaPriority,
+  ProgramCadence,
+  ProgramStatus,
+} from "@/lib/database.types";
 import { TIMEZONE_COOKIE, getTimezone, isValidTimezone, todayIn, weekStartOf } from "@/lib/dates";
 import { getAvoidanceBoard } from "@/lib/queries";
 import { IMAGE_BUCKET, supabaseAdmin } from "@/lib/supabase";
@@ -363,6 +369,79 @@ export async function deleteEvidenceEntry(id: string) {
   const db = supabaseAdmin();
   const { error } = await db.from("evidence_entries").delete().eq("id", id);
   assertOk("Removing the evidence", error);
+  refresh();
+}
+
+function programFields(formData: FormData) {
+  const number = (value: FormDataEntryValue | null) => {
+    const raw = text(value);
+    if (!raw) return null;
+    // Strip currency formatting so "$1,200" is accepted as typed.
+    const parsed = Number(raw.replace(/[^0-9.]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const tier = number(formData.get("cost_tier"));
+  const evergreen = formData.get("evergreen") === "on";
+  return {
+    name: text(formData.get("name")),
+    provider: text(formData.get("provider")),
+    cost: number(formData.get("cost")),
+    cost_tier: tier ? Math.max(1, Math.min(5, Math.round(tier))) : null,
+    cadence: (text(formData.get("cadence")) as ProgramCadence | null) ?? "self_paced",
+    commitment: text(formData.get("commitment")),
+    goal_id: text(formData.get("goal_id")),
+    status: (text(formData.get("status")) as ProgramStatus | null) ?? "active",
+    started_on: text(formData.get("started_on")),
+    // The constraint rejects an evergreen program that also has an end date,
+    // so the checkbox wins over whatever is left in the date field.
+    ends_on: evergreen ? null : text(formData.get("ends_on")),
+    evergreen,
+    url: text(formData.get("url")),
+    notes: text(formData.get("notes")),
+  };
+}
+
+export async function addProgram(formData: FormData) {
+  const fields = programFields(formData);
+  if (!fields.name) return;
+
+  const db = supabaseAdmin();
+  const { error } = await db.from("programs").insert({ ...fields, name: fields.name });
+  assertOk("Adding the program", error);
+  refresh();
+}
+
+export async function updateProgram(id: string, formData: FormData) {
+  const fields = programFields(formData);
+  if (!fields.name) return;
+
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("programs")
+    .update({ ...fields, name: fields.name })
+    .eq("id", id);
+  assertOk("Updating the program", error);
+  refresh();
+}
+
+export async function deleteProgram(id: string) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("programs").delete().eq("id", id);
+  assertOk("Removing the program", error);
+  refresh();
+}
+
+/**
+ * The whole point of the tab: one tap records that you actually showed up,
+ * which is what separates a program you're using from one you only bought.
+ */
+export async function logProgramEngagement(id: string, day: string) {
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("program_engagements")
+    .upsert({ program_id: id, engaged_on: day }, { onConflict: "program_id,engaged_on" });
+  assertOk("Logging the session", error);
   refresh();
 }
 

@@ -6,6 +6,7 @@ import {
   getCategories,
   getEvidence,
   getMacroStages,
+  getPrograms,
   getPyramid,
   getToday,
   getUniversalGoals,
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
   const timeZone = "America/Chicago";
 
   try {
-    const [pyramid, universal, today, evidence, avoidance, week, categories, stages] =
+    const [pyramid, universal, today, evidence, avoidance, week, categories, stages, programs] =
       await Promise.all([
       getPyramid(timeZone),
       getUniversalGoals(),
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
       getWeek(timeZone),
       getCategories(),
       getMacroStages(),
+      getPrograms(timeZone),
     ]);
 
     // A trivial write-then-delete, so the report covers more than reads.
@@ -82,6 +84,9 @@ export async function GET(request: NextRequest) {
           today.candidates.map((group) => [group.key, group.goals.length]),
         ),
         evidenceEntries: evidence.length,
+        programs: programs.programs.length,
+        programsIdle: programs.idleCount,
+        invested: programs.totalInvested,
         parkedIdeas: avoidance.items.length,
         promotionCredits: avoidance.creditsAvailable,
         weekStart: week.weekStart,
