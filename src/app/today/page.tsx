@@ -135,13 +135,18 @@ export default async function TodayPage() {
 
       {horizons.length === 0 ? (
         <p className="mt-8 px-1 text-sm text-muted text-pretty">
-          Nothing dated. Put target dates on your micro and mini goals and they&apos;ll sort
-          themselves into this week, this month, and this quarter.
+          Nothing is dated yet, so everything sits below. Put a target date on a micro or mini goal
+          and it moves up into this week, this month, or this quarter.
         </p>
       ) : null}
 
       {parked > 0 ? (
-        <details className="mt-8 rounded-2xl border border-dashed border-border">
+        <details
+          // With nothing dated yet, every horizon is empty and folding this
+          // away would leave the screen blank. It opens until dates exist.
+          open={horizons.length === 0}
+          className="mt-8 rounded-2xl border border-dashed border-border"
+        >
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-4 text-sm text-muted marker:hidden">
             <span>Not scheduled</span>
             <span className="tabular-nums">{parked}</span>
