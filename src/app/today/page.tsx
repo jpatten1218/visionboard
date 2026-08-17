@@ -1,22 +1,22 @@
+import Link from "next/link";
+
 import { AddGoalForm } from "@/components/add-goal-form";
-import {
-  CategorySelect,
-  Field,
-  FloorCeilingFields,
-  GoalCard,
-} from "@/components/goal-card";
+import { CategorySelect, Field, FloorCeilingFields, GoalCard } from "@/components/goal-card";
 import { EmptyState, Screen } from "@/components/screen";
 import { deleteGoal, toggleHabitDay, updateGoal } from "@/lib/actions";
+import { categoryColor } from "@/lib/category-color";
 import { formatDay, getTimezone } from "@/lib/dates";
-import { getCategories, getToday } from "@/lib/queries";
+import { getCategories, getToday, type Labelled } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
 
 export default async function TodayPage() {
   const timeZone = await getTimezone();
-  const [{ today, atomic, minis }, categories] = await Promise.all([
+  const [{ today, atomic, horizons, later, undated }, categories] = await Promise.all([
     getToday(timeZone),
     getCategories(),
   ]);
+
+  const parked = later.length + undated.length;
 
   return (
     <Screen eyebrow={formatDay(today)} title="Your floor is what saves you." quote={PULL_QUOTES.floor}>
@@ -80,10 +80,7 @@ export default async function TodayPage() {
                     <input type="hidden" name="id" value={goal.id} />
                     <Field name="title" label="Habit" defaultValue={goal.title} required />
                     <Field name="detail" label="Detail" defaultValue={goal.detail ?? ""} />
-                    <CategorySelect
-                      categories={categories}
-                      defaultValue={goal.category_id ?? ""}
-                    />
+                    <CategorySelect categories={categories} defaultValue={goal.category_id ?? ""} />
                     <FloorCeilingFields floor={goal.floor} ceiling={goal.ceiling} />
                     <div className="flex gap-2">
                       <button
@@ -116,30 +113,124 @@ export default async function TodayPage() {
         />
       </section>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="px-1 text-[11px] uppercase tracking-[0.16em] text-tier-mini">
-          Mini — today&apos;s actions
-        </h2>
-        {minis.length === 0 ? (
-          <EmptyState
-            title="Nothing queued"
-            body="Mini goals live under a micro goal on the board. Add them there and they show up here."
-          />
-        ) : (
+      {horizons.map((horizon) => (
+        <section key={horizon.key} className="mt-8 space-y-2">
+          <h2
+            className={`flex items-baseline justify-between px-1 text-[11px] uppercase tracking-[0.16em] ${
+              horizon.key === "overdue" ? "text-tier-atomic" : "text-muted"
+            }`}
+          >
+            <span>{horizon.label}</span>
+            <span className="tabular-nums">{horizon.goals.length}</span>
+          </h2>
           <ul className="space-y-2">
-            {minis.map((goal) => (
+            {horizon.goals.map((goal) => (
               <li key={goal.id}>
-                <GoalCard goal={goal} />
+                <ScheduledGoal goal={goal} />
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      ))}
+
+      {horizons.length === 0 ? (
+        <p className="mt-8 px-1 text-sm text-muted text-pretty">
+          Nothing dated. Put target dates on your micro and mini goals and they&apos;ll sort
+          themselves into this week, this month, and this quarter.
+        </p>
+      ) : null}
+
+      {parked > 0 ? (
+        <details className="mt-8 rounded-2xl border border-dashed border-border">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-4 text-sm text-muted marker:hidden">
+            <span>Not scheduled</span>
+            <span className="tabular-nums">{parked}</span>
+          </summary>
+          <div className="space-y-4 border-t border-border px-4 py-3">
+            {later.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className="text-[11px] uppercase tracking-[0.16em] text-muted">Later</h3>
+                <ul className="space-y-2">
+                  {later.map((goal) => (
+                    <li key={goal.id}>
+                      <ScheduledGoal goal={goal} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {undated.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className="text-[11px] uppercase tracking-[0.16em] text-muted">No date</h3>
+                <ul className="space-y-2">
+                  {undated.map((goal) => (
+                    <li key={goal.id}>
+                      <ScheduledGoal goal={goal} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
 
       <p className="mt-8 px-1 text-sm text-muted text-pretty">
         Bad day? You still move. One sticky worth of effort. Some days, not making things worse is a
         win.
       </p>
     </Screen>
+  );
+}
+
+/**
+ * Macro goals are not completed from here — they are the thing the rest
+ * ladders up to, so they link through to their own screen instead.
+ */
+function ScheduledGoal({ goal }: { goal: Labelled }) {
+  const meta = (
+    <>
+      {goal.categoryName ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="h-2 w-2 rounded-full"
+            style={{ background: categoryColor(goal.categorySlot) }}
+          />
+          {goal.categoryName}
+        </span>
+      ) : null}
+      {goal.target_on ? (
+        <span>
+          {goal.categoryName ? " · " : ""}
+          {formatDay(goal.target_on)}
+        </span>
+      ) : null}
+    </>
+  );
+
+  if (goal.tier === "macro") {
+    return (
+      <Link
+        href={`/goal/${goal.id}`}
+        className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block leading-snug text-pretty">{goal.title}</span>
+          <span className="mt-0.5 block text-xs text-muted">{meta}</span>
+        </span>
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M9 5l7 7-7 7" />
+        </svg>
+      </Link>
+    );
+  }
+
+  return (
+    <GoalCard goal={goal}>
+      {goal.categoryName ? (
+        <p className="mt-1.5 text-xs text-muted">{meta}</p>
+      ) : null}
+    </GoalCard>
   );
 }

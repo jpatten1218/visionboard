@@ -1,5 +1,6 @@
 import { SwipeToComplete } from "@/components/swipe-to-complete";
 import { completeGoal, deleteGoal, updateGoal } from "@/lib/actions";
+import { categoryColor } from "@/lib/category-color";
 import type { CategoryRow, GoalRow } from "@/lib/database.types";
 import { formatDay } from "@/lib/dates";
 import { TIERS } from "@/lib/workbook";
@@ -45,7 +46,12 @@ export function GoalCard({
               {TIERS[goal.tier].label}
             </p>
             {category ? (
-              <span className="rounded-full bg-surface-sunk px-2 py-0.5 text-[10px] text-muted">
+              <span className="inline-flex items-center gap-1.5 text-[10px] text-muted">
+                <span
+                  aria-hidden
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: categoryColor(category.color_slot) }}
+                />
                 {category.name}
               </span>
             ) : null}

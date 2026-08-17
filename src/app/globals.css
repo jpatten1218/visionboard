@@ -46,6 +46,36 @@
   }
 }
 
+/* Category accents. A fixed, CVD-validated order — slots are assigned in
+   sequence and never shuffled, so a category keeps its colour for good. Both
+   modes are selected steps of the same eight hues, not an automatic flip.
+   Three of the light steps sit under 3:1 on this surface, which is allowed
+   here because a category's name is always rendered beside its colour —
+   identity is never carried by colour alone. */
+:root {
+  --cat-1: #2a78d6;
+  --cat-2: #eb6834;
+  --cat-3: #1baf7a;
+  --cat-4: #eda100;
+  --cat-5: #e87ba4;
+  --cat-6: #008300;
+  --cat-7: #4a3aa7;
+  --cat-8: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cat-1: #3987e5;
+    --cat-2: #d95926;
+    --cat-3: #199e70;
+    --cat-4: #c98500;
+    --cat-5: #d55181;
+    --cat-6: #008300;
+    --cat-7: #9085e9;
+    --cat-8: #e66767;
+  }
+}
+
 @theme inline {
   --color-tier-universal: var(--tier-universal);
   --color-tier-macro: var(--tier-macro);

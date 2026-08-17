@@ -45,6 +45,34 @@ export function weekStartOf(isoDate: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** The Sunday closing the week that contains `isoDate`. */
+export function weekEndOf(isoDate: string): string {
+  const date = new Date(`${weekStartOf(isoDate)}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 6);
+  return date.toISOString().slice(0, 10);
+}
+
+/** The day after `isoDate`, so ranges can butt up without overlapping. */
+export function nextDay(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+/** The last day of the month containing `isoDate`. */
+export function monthEndOf(isoDate: string): string {
+  const [year, month] = isoDate.split("-").map(Number);
+  // Day 0 of the next month is the last day of this one.
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+/** The last day of the calendar quarter containing `isoDate`. */
+export function quarterEndOf(isoDate: string): string {
+  const [year, month] = isoDate.split("-").map(Number);
+  const quarterEndMonth = Math.ceil(month / 3) * 3;
+  return new Date(Date.UTC(year, quarterEndMonth, 0)).toISOString().slice(0, 10);
+}
+
 /** `count` days back from `isoDate`, oldest first, inclusive of `isoDate`. */
 export function recentDays(isoDate: string, count: number): string[] {
   const days: string[] = [];

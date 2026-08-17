@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CategorySelect, DateField, Field } from "@/components/goal-card";
 import { EmptyState, Screen } from "@/components/screen";
 import { addEvidenceEntry, deleteEvidenceEntry } from "@/lib/actions";
+import { categoryColor } from "@/lib/category-color";
 import { formatDay, getTimezone, recentDays, todayIn } from "@/lib/dates";
 import { getCategories, getEvidence, type EvidenceEntry } from "@/lib/queries";
 import { PULL_QUOTES, TIERS } from "@/lib/workbook";
@@ -27,6 +28,7 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
 
   // Category order follows the settings list, with uncategorised last.
   const order = [...categories.map((category) => category.name), null];
+  const slotByName = new Map(categories.map((category) => [category.name, category.color_slot]));
   const grouped = new Map<string, EvidenceEntry[]>();
   for (const entry of entries) {
     const key = groupByCategory ? entry.categoryName ?? "Uncategorised" : entry.on;
@@ -116,15 +118,39 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
           sections.map((section) => (
             <div key={section}>
               <h3 className="mb-2 flex items-baseline justify-between px-1 text-xs font-medium text-muted">
-                <span>{groupByCategory ? section : formatDay(section)}</span>
+                <span className="flex items-center gap-2">
+                  {groupByCategory ? (
+                    <span
+                      aria-hidden
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ background: categoryColor(slotByName.get(section)) }}
+                    />
+                  ) : null}
+                  <span
+                    style={
+                      groupByCategory
+                        ? { color: categoryColor(slotByName.get(section)) }
+                        : undefined
+                    }
+                  >
+                    {groupByCategory ? section : formatDay(section)}
+                  </span>
+                </span>
                 <span className="tabular-nums">{grouped.get(section)!.length}</span>
               </h3>
               <ul className="space-y-1.5">
                 {grouped.get(section)!.map((entry) => (
                   <li
                     key={entry.id}
-                    className="flex items-start gap-3 rounded-xl border border-border bg-surface px-4 py-2.5"
+                    className="relative flex items-start gap-3 overflow-hidden rounded-xl border border-border bg-surface py-2.5 pl-5 pr-4"
                   >
+                    {/* Same stripe colour as the category wears on the board,
+                        so a win is placeable at a glance. */}
+                    <span
+                      aria-hidden
+                      className="absolute inset-y-0 left-0 w-1"
+                      style={{ background: categoryColor(entry.categorySlot) }}
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm leading-snug text-pretty">{entry.title}</span>
                       <span className="mt-0.5 block text-xs text-muted text-pretty">

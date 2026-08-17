@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 
+import { PALETTE_SLOTS } from "@/lib/category-color";
 import type { GoalDomain, GoalTier, IdeaPriority } from "@/lib/database.types";
 import { TIMEZONE_COOKIE, getTimezone, isValidTimezone, todayIn, weekStartOf } from "@/lib/dates";
 import { getAvoidanceBoard } from "@/lib/queries";
@@ -174,17 +175,25 @@ export async function addCategory(formData: FormData) {
   if (!name) return;
 
   const db = supabaseAdmin();
-  const { data: last, error: readError } = await db
+  const { data: existing, error: readError } = await db
     .from("categories")
-    .select("sort_order")
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .select("sort_order, color_slot")
+    .order("sort_order", { ascending: false });
   assertOk("Reading category order", readError);
 
-  const { error } = await db
-    .from("categories")
-    .insert({ name, sort_order: (last?.sort_order ?? 0) + 1 });
+  const rows = existing ?? [];
+  // Slots are handed out in the palette's fixed order. Past eight categories
+  // they repeat — the name is always shown alongside, so colour is never the
+  // only thing telling two apart.
+  const used = new Set(rows.map((row) => row.color_slot));
+  const nextSlot =
+    [1, 2, 3, 4, 5, 6, 7, 8].find((slot) => !used.has(slot)) ?? (rows.length % PALETTE_SLOTS) + 1;
+
+  const { error } = await db.from("categories").insert({
+    name,
+    sort_order: (rows[0]?.sort_order ?? 0) + 1,
+    color_slot: nextSlot,
+  });
   // A duplicate name is a slip, not a failure worth throwing an error page for.
   if (error && !error.message.includes("duplicate key")) {
     assertOk("Adding the category", error);

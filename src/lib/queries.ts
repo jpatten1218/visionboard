@@ -1,6 +1,14 @@
 import "server-only";
 
-import { recentDays, todayIn, weekStartOf } from "@/lib/dates";
+import {
+  monthEndOf,
+  nextDay,
+  quarterEndOf,
+  recentDays,
+  todayIn,
+  weekEndOf,
+  weekStartOf,
+} from "@/lib/dates";
 import { supabaseAdmin } from "@/lib/supabase";
 import type {
   AvoidanceItemRow,
@@ -139,34 +147,67 @@ export async function getUniversalGoals(): Promise<GoalRow[]> {
   return (data ?? []) as GoalRow[];
 }
 
+export type Labelled = GoalRow & { categoryName: string | null; categorySlot: number | null };
+
+export type Horizon = { key: string; label: string; goals: Labelled[] };
+
 export type TodayBoard = {
   today: string;
-  atomic: (GoalRow & { doneToday: boolean; streak: number })[];
-  minis: GoalRow[];
+  atomic: (Labelled & { doneToday: boolean; streak: number })[];
+  /** Overdue, then this week, month, and quarter. Empty buckets are dropped. */
+  horizons: Horizon[];
+  /** Dated past the quarter, plus everything with no date — both folded away. */
+  later: Labelled[];
+  undated: Labelled[];
 };
 
-/** The daily screen: atomic non-negotiables plus today's open mini goals. */
+/**
+ * The daily screen. Atomic non-negotiables sit on top; everything else is
+ * bucketed by how soon it is due, so the list has a shape instead of being one
+ * long backlog. Undated work folds away rather than competing for attention.
+ */
 export async function getToday(timeZone: string): Promise<TodayBoard> {
   const db = supabaseAdmin();
   const today = todayIn(timeZone);
   // 60 days is enough history to render any streak worth showing.
   const window = recentDays(today, 60);
 
-  const [goalsResult, completionsResult] = await Promise.all([
+  const [goalsResult, completionsResult, categories] = await Promise.all([
     db
       .from("goals")
       .select("*")
-      .in("tier", ["atomic", "mini"])
+      .neq("tier", "universal")
       .eq("status", "active")
       .order("sort_order")
       .order("created_at"),
     db.from("goal_completions").select("*").gte("completed_on", window[0]),
+    getCategories(),
   ]);
   fail("Loading today's goals", goalsResult.error);
   fail("Loading completions", completionsResult.error);
 
   const goals = (goalsResult.data ?? []) as GoalRow[];
   const completions = (completionsResult.data ?? []) as GoalCompletionRow[];
+
+  const byCategoryId = new Map(categories.map((category) => [category.id, category]));
+  const byId = new Map(goals.map((goal) => [goal.id, goal]));
+
+  /** A goal's own category, or the nearest ancestor's. */
+  function label(goal: GoalRow): Labelled {
+    let cursor: GoalRow | undefined = goal;
+    for (let depth = 0; cursor && depth < 8; depth++) {
+      if (cursor.category_id) {
+        const category = byCategoryId.get(cursor.category_id);
+        return {
+          ...goal,
+          categoryName: category?.name ?? null,
+          categorySlot: category?.color_slot ?? null,
+        };
+      }
+      cursor = cursor.parent_id ? byId.get(cursor.parent_id) : undefined;
+    }
+    return { ...goal, categoryName: null, categorySlot: null };
+  }
 
   const doneByGoal = new Map<string, Set<string>>();
   for (const completion of completions) {
@@ -179,21 +220,47 @@ export async function getToday(timeZone: string): Promise<TodayBoard> {
     .filter((goal) => goal.tier === "atomic")
     .map((goal) => {
       const done = doneByGoal.get(goal.id) ?? new Set<string>();
-      return { ...goal, doneToday: done.has(today), streak: streakEndingAt(done, today) };
+      return { ...label(goal), doneToday: done.has(today), streak: streakEndingAt(done, today) };
     });
 
-  // Now that minis can carry a target, the daily screen leads with whatever
-  // is dated soonest; undated ones follow in the order they were written.
-  const minis = goals
-    .filter((goal) => goal.tier === "mini")
-    .sort((a, b) => {
-      if (a.target_on && b.target_on) return a.target_on.localeCompare(b.target_on);
-      if (a.target_on) return -1;
-      if (b.target_on) return 1;
-      return a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at);
-    });
+  const scheduled = goals.filter((goal) => goal.tier !== "atomic").map(label);
+  const byDate = (a: Labelled, b: Labelled) =>
+    (a.target_on ?? "").localeCompare(b.target_on ?? "") ||
+    a.sort_order - b.sort_order ||
+    a.created_at.localeCompare(b.created_at);
 
-  return { today, atomic, minis };
+  const weekEnd = weekEndOf(today);
+  const monthEnd = monthEndOf(today);
+  const quarterEnd = quarterEndOf(today);
+
+  const dated = scheduled.filter((goal) => goal.target_on !== null).sort(byDate);
+  const inRange = (goal: Labelled, from: string, to: string) =>
+    goal.target_on! >= from && goal.target_on! <= to;
+
+  const horizons: Horizon[] = [
+    // Overdue is not a bucket the workbook asks for, but without it anything
+    // whose date has passed would silently vanish from every section.
+    { key: "overdue", label: "Overdue", goals: dated.filter((g) => g.target_on! < today) },
+    { key: "week", label: "This week", goals: dated.filter((g) => inRange(g, today, weekEnd)) },
+    {
+      key: "month",
+      label: "This month",
+      goals: dated.filter((g) => inRange(g, nextDay(weekEnd), monthEnd)),
+    },
+    {
+      key: "quarter",
+      label: "This quarter",
+      goals: dated.filter((g) => inRange(g, nextDay(monthEnd), quarterEnd)),
+    },
+  ].filter((horizon) => horizon.goals.length > 0);
+
+  return {
+    today,
+    atomic,
+    horizons,
+    later: dated.filter((goal) => goal.target_on! > quarterEnd),
+    undated: scheduled.filter((goal) => goal.target_on === null).sort(byDate),
+  };
 }
 
 /**
@@ -219,6 +286,8 @@ export type EvidenceEntry = {
   on: string;
   note: string | null;
   categoryName: string | null;
+  /** Palette slot of the category, so Evidence matches the board's colours. */
+  categorySlot: number | null;
   kind: "finished" | "logged" | "added";
 };
 
@@ -255,21 +324,29 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
   fail("Loading added evidence", addedResult.error);
   fail("Loading the goal graph", allGoalsResult.error);
 
-  const categoryName = new Map(categories.map((category) => [category.id, category.name]));
+  const byCategoryId = new Map(categories.map((category) => [category.id, category]));
   type GraphRow = { id: string; parent_id: string | null; category_id: string | null };
   const graph = new Map(
     ((allGoalsResult.data ?? []) as GraphRow[]).map((row) => [row.id, row]),
   );
 
+  function labelFor(categoryId: string | null): Pick<EvidenceEntry, "categoryName" | "categorySlot"> {
+    const category = categoryId ? byCategoryId.get(categoryId) : undefined;
+    return {
+      categoryName: category?.name ?? null,
+      categorySlot: category?.color_slot ?? null,
+    };
+  }
+
   /** A goal's own category, or the nearest ancestor's. */
-  function categoryOfGoal(goalId: string): string | null {
+  function categoryOfGoal(goalId: string) {
     let cursor = graph.get(goalId);
     // Bounded by the pyramid's depth; the guard is against a cyclic parent.
     for (let depth = 0; cursor && depth < 8; depth++) {
-      if (cursor.category_id) return categoryName.get(cursor.category_id) ?? null;
+      if (cursor.category_id) return labelFor(cursor.category_id);
       cursor = cursor.parent_id ? graph.get(cursor.parent_id) : undefined;
     }
-    return null;
+    return labelFor(null);
   }
 
   const finished: EvidenceEntry[] = ((finishedResult.data ?? []) as GoalRow[]).map((goal) => ({
@@ -278,7 +355,7 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
     tier: goal.tier,
     on: (goal.completed_at ?? goal.updated_at).slice(0, 10),
     note: goal.detail,
-    categoryName: categoryOfGoal(goal.id),
+    ...categoryOfGoal(goal.id),
     kind: "finished",
   }));
 
@@ -295,7 +372,7 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
       tier: row.goals!.tier,
       on: row.completed_on,
       note: row.note,
-      categoryName: categoryOfGoal(row.goal_id),
+      ...categoryOfGoal(row.goal_id),
       kind: "logged",
     }));
 
@@ -305,7 +382,7 @@ export async function getEvidence(limit = 200): Promise<EvidenceEntry[]> {
     tier: null,
     on: entry.happened_on,
     note: entry.note,
-    categoryName: entry.category_id ? categoryName.get(entry.category_id) ?? null : null,
+    ...labelFor(entry.category_id),
     kind: "added",
   }));
 

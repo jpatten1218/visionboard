@@ -13,6 +13,8 @@ export type CategoryRow = {
   owner_id: string;
   name: string;
   sort_order: number;
+  /** 1–8, indexing the fixed categorical palette in globals.css. */
+  color_slot: number;
   created_at: string;
 };
 

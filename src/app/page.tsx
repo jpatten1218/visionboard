@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AddGoalForm } from "@/components/add-goal-form";
 import { EmptyState, Screen } from "@/components/screen";
+import { categoryColor } from "@/lib/category-color";
 import { formatDay } from "@/lib/dates";
 import { getCategories, getPyramid, type GoalNode } from "@/lib/queries";
 import { PULL_QUOTES } from "@/lib/workbook";
@@ -10,11 +11,12 @@ export default async function BoardPage() {
   const [macros, categories] = await Promise.all([getPyramid(), getCategories()]);
 
   // getPyramid already orders by category, so grouping is a single pass.
-  const groups = new Map<string, { name: string; macros: GoalNode[] }>();
+  const groups = new Map<string, { name: string; color: string; macros: GoalNode[] }>();
   for (const macro of macros) {
     const key = macro.category_id ?? "none";
     const group = groups.get(key) ?? {
       name: macro.category?.name ?? "Uncategorised",
+      color: categoryColor(macro.category?.color_slot),
       macros: [],
     };
     group.macros.push(macro);
@@ -32,13 +34,18 @@ export default async function BoardPage() {
         <div className="space-y-7">
           {[...groups.values()].map((group) => (
             <section key={group.name}>
-              <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
-                {group.name}
+              <h2 className="mb-2 flex items-center gap-2 px-1 text-[11px] uppercase tracking-[0.16em]">
+                <span
+                  aria-hidden
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: group.color }}
+                />
+                <span style={{ color: group.color }}>{group.name}</span>
               </h2>
               <ul className="space-y-2">
                 {group.macros.map((macro) => (
                   <li key={macro.id}>
-                    <MacroLink macro={macro} />
+                    <MacroLink macro={macro} color={group.color} />
                   </li>
                 ))}
               </ul>
@@ -65,7 +72,7 @@ export default async function BoardPage() {
   );
 }
 
-function MacroLink({ macro }: { macro: GoalNode }) {
+function MacroLink({ macro, color }: { macro: GoalNode; color: string }) {
   const total = macro.children.length;
   const done = macro.children.filter((micro) => micro.status === "done").length;
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -75,7 +82,7 @@ function MacroLink({ macro }: { macro: GoalNode }) {
       href={`/goal/${macro.id}`}
       className="relative flex items-center gap-3 overflow-hidden rounded-2xl border border-border bg-surface py-3.5 pl-5 pr-4"
     >
-      <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-tier-macro" />
+      <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
 
       <span className="min-w-0 flex-1">
         <span className="block leading-snug text-pretty">{macro.title}</span>

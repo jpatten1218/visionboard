@@ -69,7 +69,10 @@ export async function GET(request: NextRequest) {
         universalGoals: universal.length,
         categories: categories.map((category) => category.name),
         atomicHabits: today.atomic.length,
-        openMiniGoals: today.minis.length,
+        horizons: Object.fromEntries(
+          today.horizons.map((horizon) => [horizon.key, horizon.goals.length]),
+        ),
+        unscheduled: today.later.length + today.undated.length,
         evidenceEntries: evidence.length,
         parkedIdeas: avoidance.items.length,
         promotionCredits: avoidance.creditsAvailable,
