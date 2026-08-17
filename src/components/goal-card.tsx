@@ -74,6 +74,8 @@ export function GoalCard({ goal, children }: { goal: GoalRow; children?: React.R
                 </button>
                 <button
                   type="submit"
+                  // Deleting must not be gated by the title field's validity.
+                  formNoValidate
                   formAction={deleteGoal.bind(null, goal.id)}
                   className="min-h-11 rounded-xl border border-border px-4 text-sm text-muted"
                 >
