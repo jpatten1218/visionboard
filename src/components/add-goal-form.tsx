@@ -54,7 +54,14 @@ export function AddGoalForm({
         ) : (
           <>
             {showsCategory ? <CategorySelect categories={categories ?? []} /> : null}
-            {showsDate ? <DateField name="target_on" label="Target" /> : null}
+            {showsDate ? (
+              <>
+                <DateField name="target_on" label="Target" />
+                <p className="text-xs text-muted text-pretty">
+                  Leave it blank and this inherits the date of the goal above it.
+                </p>
+              </>
+            ) : null}
           </>
         )}
         {withFloorCeiling ? <FloorCeilingFields /> : null}

@@ -43,12 +43,28 @@ export async function createGoal(formData: FormData) {
   const parentId = text(formData.get("parent_id"));
 
   const db = supabaseAdmin();
+
+  // A micro or mini goal with no date of its own inherits its parent's, so
+  // the whole ladder is due by the date the thing above it is due. Because a
+  // micro inherits before a mini is written under it, this cascades down from
+  // the macro goal without needing to walk the tree.
+  let targetOn = text(formData.get("target_on"));
+  if (!targetOn && parentId) {
+    const { data: parent, error: parentError } = await db
+      .from("goals")
+      .select("target_on")
+      .eq("id", parentId)
+      .maybeSingle();
+    assertOk("Reading the parent goal's target", parentError);
+    targetOn = parent?.target_on ?? null;
+  }
+
   const { error } = await db.from("goals").insert({
     tier,
     title,
     parent_id: parentId,
     category_id: text(formData.get("category_id")),
-    target_on: text(formData.get("target_on")),
+    target_on: targetOn,
     detail: text(formData.get("detail")),
     floor: text(formData.get("floor")),
     ceiling: text(formData.get("ceiling")),
