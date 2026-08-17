@@ -3,12 +3,16 @@ import Link from "next/link";
 import { CategorySelect, DateField, Field } from "@/components/goal-card";
 import { EmptyState, Screen } from "@/components/screen";
 import { addEvidenceEntry, deleteEvidenceEntry } from "@/lib/actions";
+import {
+  BreadthBar,
+  EvidenceStack,
+  MilestoneMeter,
+  MomentumCurve,
+} from "@/components/momentum";
 import { categoryColor } from "@/lib/category-color";
 import { formatDay, getTimezone, recentDays, todayIn } from "@/lib/dates";
 import { getCategories, getEvidence, type EvidenceEntry } from "@/lib/queries";
 import { PULL_QUOTES, TIERS } from "@/lib/workbook";
-
-const GRID_DAYS = 56;
 
 export default async function EvidencePage({ searchParams }: PageProps<"/evidence">) {
   const params = await searchParams;
@@ -18,13 +22,20 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
   const today = todayIn(timeZone);
   const [entries, categories] = await Promise.all([getEvidence(), getCategories()]);
 
-  const countByDay = new Map<string, number>();
-  for (const entry of entries) {
-    countByDay.set(entry.on, (countByDay.get(entry.on) ?? 0) + 1);
-  }
+  const last7 = new Set(recentDays(today, 7));
+  const activeLast7 = new Set(
+    entries.filter((entry) => last7.has(entry.on)).map((entry) => entry.on),
+  ).size;
 
-  const days = recentDays(today, GRID_DAYS);
-  const busiest = Math.max(1, ...days.map((day) => countByDay.get(day) ?? 0));
+  const last30 = new Set(recentDays(today, 30));
+  const recent30 = entries.filter((entry) => last30.has(entry.on));
+  const areas = new Set(recent30.map((entry) => entry.categoryName ?? "Uncategorised")).size;
+  const breadthLabel =
+    recent30.length === 0
+      ? "Nothing in the last 30 days — the stack above is still yours."
+      : `${recent30.length} in the last 30 days, across ${areas} ${
+          areas === 1 ? "part" : "parts"
+        } of your life.`;
 
   // Category order follows the settings list, with uncategorised last.
   const order = [...categories.map((category) => category.name), null];
@@ -49,33 +60,43 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
       title="Evidence of progress"
       quote={PULL_QUOTES.progress}
     >
+      {/* The hero figure — every number on this page is one that can only go
+          up. Proportional figures, not tabular: a standalone value at display
+          size looks loose when every digit is forced to a zero's width. */}
       <div className="flex items-baseline gap-2">
-        <span className="font-serif text-5xl tabular-nums">{entries.length}</span>
+        <span className="text-5xl font-semibold">{entries.length}</span>
         <span className="text-sm text-muted">
           {entries.length === 1 ? "win stacked" : "wins stacked"}
         </span>
       </div>
+      <MilestoneMeter total={entries.length} />
 
-      <section className="mt-6">
-        <h2 className="mb-2 px-1 text-[11px] uppercase tracking-[0.16em] text-muted">
-          Last eight weeks
-        </h2>
-        {/* Columns are weeks, rows are weekdays — dense enough to read the
-            shape of a habit at a glance on a phone. */}
-        <div className="grid grid-flow-col grid-rows-7 gap-1">
-          {days.map((day) => {
-            const count = countByDay.get(day) ?? 0;
-            return (
-              <div
-                key={day}
-                title={`${formatDay(day)} — ${count} ${count === 1 ? "win" : "wins"}`}
-                className="aspect-square rounded-[3px] bg-accent"
-                style={{ opacity: count === 0 ? 0.08 : 0.25 + 0.75 * (count / busiest) }}
-              />
-            );
-          })}
-        </div>
+      <section className="mt-7">
+        <h2 className="mb-2 text-[11px] uppercase tracking-[0.16em] text-muted">The stack</h2>
+        <EvidenceStack entries={entries} />
       </section>
+
+      {entries.length > 0 ? (
+        <>
+          <section className="mt-7">
+            <h2 className="mb-1 text-[11px] uppercase tracking-[0.16em] text-muted">Momentum</h2>
+            <MomentumCurve entries={entries} today={today} />
+          </section>
+
+          <section className="mt-7">
+            <h2 className="mb-2 text-[11px] uppercase tracking-[0.16em] text-muted">
+              Where it came from
+            </h2>
+            <BreadthBar entries={recent30} label={breadthLabel} />
+          </section>
+
+          <p className="mt-5 rounded-2xl border border-border bg-surface-sunk px-4 py-3 text-sm text-pretty">
+            {activeLast7 === 0
+              ? "Nothing logged in the last seven days — but everything above still happened. Move one thing today."
+              : `You moved something on ${activeLast7} of the last 7 days.`}
+          </p>
+        </>
+      ) : null}
 
       <section className="mt-6">
         <details className="rounded-2xl border border-dashed border-border">
@@ -126,15 +147,7 @@ export default async function EvidencePage({ searchParams }: PageProps<"/evidenc
                       style={{ background: categoryColor(slotByName.get(section)) }}
                     />
                   ) : null}
-                  <span
-                    style={
-                      groupByCategory
-                        ? { color: categoryColor(slotByName.get(section)) }
-                        : undefined
-                    }
-                  >
-                    {groupByCategory ? section : formatDay(section)}
-                  </span>
+                  <span>{groupByCategory ? section : formatDay(section)}</span>
                 </span>
                 <span className="tabular-nums">{grouped.get(section)!.length}</span>
               </h3>

@@ -43,7 +43,10 @@ export default async function BoardPage() {
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ background: group.color }}
                 />
-                <span style={{ color: group.color }}>{group.name}</span>
+                {/* The dot carries the identity; the text stays in an ink
+                    token. Three of the light steps sit under 3:1 and would be
+                    genuinely hard to read as small uppercase type. */}
+                <span className="text-muted">{group.name}</span>
               </h2>
               <ul className="space-y-2">
                 {group.macros.map((macro) => (
