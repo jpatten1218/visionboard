@@ -468,7 +468,7 @@ export type EvidenceEntry = {
   categoryName: string | null;
   /** Palette slot of the category, so Evidence matches the board's colours. */
   categorySlot: number | null;
-  kind: "finished" | "logged" | "added";
+  kind: "finished" | "logged" | "added" | "habit";
 };
 
 /**
@@ -477,7 +477,15 @@ export type EvidenceEntry = {
  */
 export async function getEvidence(timeZone: string, limit = 200): Promise<EvidenceEntry[]> {
   const db = supabaseAdmin();
-  const [finishedResult, loggedResult, addedResult, allGoalsResult, categories] = await Promise.all([
+  const [
+    finishedResult,
+    loggedResult,
+    addedResult,
+    allGoalsResult,
+    categories,
+    habitsResult,
+    habitLogsResult,
+  ] = await Promise.all([
     db
       .from("goals")
       .select("*")
@@ -498,11 +506,15 @@ export async function getEvidence(timeZone: string, limit = 200): Promise<Eviden
     // carries the category.
     db.from("goals").select("id, parent_id, category_id"),
     getCategories(),
+    db.from("habits").select("id, name, category_id, target_per_day"),
+    db.from("habit_logs").select("*").order("logged_on", { ascending: false }).limit(limit),
   ]);
   fail("Loading finished goals", finishedResult.error);
   fail("Loading logged days", loggedResult.error);
   fail("Loading added evidence", addedResult.error);
   fail("Loading the goal graph", allGoalsResult.error);
+  fail("Loading habits", habitsResult.error);
+  fail("Loading habit logs", habitLogsResult.error);
 
   const byCategoryId = new Map(categories.map((category) => [category.id, category]));
   type GraphRow = { id: string; parent_id: string | null; category_id: string | null };
@@ -566,7 +578,27 @@ export async function getEvidence(timeZone: string, limit = 200): Promise<Eviden
     kind: "added",
   }));
 
-  return [...finished, ...logged, ...added]
+  // A habit day only counts once the day's target was actually met — a
+  // partial rep is progress, not a win to stack.
+  type HabitMeta = { id: string; name: string; category_id: string | null; target_per_day: number };
+  const habitsById = new Map(
+    ((habitsResult.data ?? []) as HabitMeta[]).map((habit) => [habit.id, habit]),
+  );
+
+  const habitWins: EvidenceEntry[] = ((habitLogsResult.data ?? []) as HabitLogRow[])
+    .map((log) => ({ log, habit: habitsById.get(log.habit_id) }))
+    .filter(({ log, habit }) => habit !== undefined && log.count >= habit.target_per_day)
+    .map(({ log, habit }) => ({
+      id: `habit:${log.id}`,
+      title: habit!.name,
+      tier: null,
+      on: log.logged_on,
+      note: log.note,
+      ...labelFor(habit!.category_id),
+      kind: "habit" as const,
+    }));
+
+  return [...finished, ...logged, ...added, ...habitWins]
     .sort((a, b) => b.on.localeCompare(a.on))
     .slice(0, limit);
 }
